@@ -3,6 +3,7 @@ package com.jm.reader.ui.member
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +17,6 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +43,8 @@ import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.UiLanguage
 import com.jm.reader.ui.theme.AdFreeAccent
+import com.jm.reader.ui.theme.GlassPanel
+import com.jm.reader.ui.theme.GlassShape
 import kotlinx.coroutines.launch
 
 @Composable
@@ -96,8 +98,9 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
 
 @Composable
 private fun MemberProfile(member: Member, s: com.jm.reader.ui.strings.AppStrings) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Column(Modifier.padding(16.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        GlassPanel(modifier = Modifier.fillMaxWidth(), shape = GlassShape, blurRadius = 26.dp) {
+            Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     member.nickName.ifBlank { member.username }.ifBlank { s.memberProfile },
@@ -122,6 +125,7 @@ private fun MemberProfile(member: Member, s: com.jm.reader.ui.strings.AppStrings
                 Text("${s.levelLabel}${member.levelName.ifBlank { member.level }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text("${s.coinLabel}${member.coin}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

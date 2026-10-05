@@ -80,5 +80,10 @@ dependencies {
     // Image loading
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // Unit tests run on the JVM: the real org.json implementation substitutes for the
+    // android.jar stub so the response/record parsers can be exercised with captured payloads.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

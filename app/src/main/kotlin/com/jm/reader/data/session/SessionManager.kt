@@ -18,15 +18,28 @@ class SessionManager(context: Context) {
 
     companion object {
         const val DEFAULT_LANG = "TW"
+
+        /** Fallback app version used in the `Tokenparam` header until `/setting` reports one. */
+        const val DEFAULT_APP_VERSION = "2.1.7"
         private const val KEY_JWT = "jwttoken"
         private const val KEY_MEMBER = "memberInfo"
         private const val KEY_LANG = "lang"
         private const val KEY_API_URL = "apiUrl"
         private const val KEY_AUTH_EXPIRY = "authExpiry"
         private const val KEY_IMG_HOST = "imgHost"
+        private const val KEY_APP_VERSION = "appVersion"
+        private const val KEY_LOGGED_IN = "loggedIn"
     }
 
     // --- Auth ---
+
+    init {
+        // Migrate installs written before the explicit login flag existed: a stored member payload
+        // is what the old `isLoggedIn` used, so honour it once and persist the flag.
+        if (!prefs.contains(KEY_LOGGED_IN) && !prefs.getString(KEY_MEMBER, null).isNullOrBlank()) {
+            prefs.edit().putBoolean(KEY_LOGGED_IN, true).apply()
+        }
+    }
 
     var jwtToken: String?
         get() = prefs.getString(KEY_JWT, null)
@@ -51,13 +64,15 @@ class SessionManager(context: Context) {
         get() = memberJson?.let { runCatching { JSONObject(it).optString("s") }.getOrNull() }
 
     /**
-     * The app API does not hand out a bearer token: `/login` returns the member payload whose
-     * `s` field is then sent back as the `AVS` cookie, and that cookie is what authenticates
-     * every later request. So a session counts as logged in when we hold that payload, not
-     * when a `jwttoken` happens to be present (the mobile API never sends one).
+     * A session counts as logged in when a login actually succeeded and its member payload is
+     * still stored. The flag is written by [saveAuth] and cleared by [clearAuth].
+     *
+     * Whether requests then authenticate with `jwttoken` (as `Authorization: Bearer`) or with the
+     * payload's `s` field (as the `AVS` cookie) is decided per request - the mobile API returns
+     * `jwttoken`, the web client relies on `s`, and we send whichever we hold.
      */
     val isLoggedIn: Boolean
-        get() = memberJson?.isNotBlank() == true && (!avsSession.isNullOrBlank() || !jwtToken.isNullOrBlank())
+        get() = prefs.getBoolean(KEY_LOGGED_IN, false) && memberJson?.isNotBlank() == true
 
     private val _loggedIn = MutableStateFlow(isLoggedIn)
 
@@ -65,9 +80,14 @@ class SessionManager(context: Context) {
     val loggedInFlow: StateFlow<Boolean> = _loggedIn.asStateFlow()
 
     fun saveAuth(token: String, memberData: JSONObject) {
-        jwtToken = token
-        memberJson = memberData.toString()
-        prefs.edit().putLong(KEY_AUTH_EXPIRY, System.currentTimeMillis() + 60 * 60 * 1000L).apply()
+        prefs.edit()
+            .putString(KEY_JWT, token)
+            .putString(KEY_MEMBER, memberData.toString())
+            // The previous implementation invented a one-hour client-side expiry here; the JWT
+            // lifetime is decided by the server (a 401 clears the session), so there is nothing
+            // to expire locally.
+            .putBoolean(KEY_LOGGED_IN, true)
+            .apply()
         _loggedIn.value = isLoggedIn
     }
 
@@ -76,14 +96,9 @@ class SessionManager(context: Context) {
             .remove(KEY_JWT)
             .remove(KEY_MEMBER)
             .remove(KEY_AUTH_EXPIRY)
+            .putBoolean(KEY_LOGGED_IN, false)
             .apply()
         _loggedIn.value = false
-    }
-
-    /** Clears auth when the 1-hour web-app expiry has passed. */
-    fun isAuthExpired(): Boolean {
-        val expiry = prefs.getLong(KEY_AUTH_EXPIRY, 0L)
-        return expiry != 0L && System.currentTimeMillis() > expiry
     }
 
     // --- Host ---
@@ -95,4 +110,13 @@ class SessionManager(context: Context) {
     var imgHost: String
         get() = prefs.getString(KEY_IMG_HOST, "") ?: ""
         set(value) = prefs.edit().putString(KEY_IMG_HOST, value).apply()
+
+    /**
+     * App version sent in `Tokenparam` (`"<ts>,<version>"`). `/setting` advertises the current
+     * one, so we follow it instead of hard-coding a stale value.
+     */
+    var appVersion: String
+        get() = prefs.getString(KEY_APP_VERSION, DEFAULT_APP_VERSION)
+            ?.takeIf { it.isNotBlank() } ?: DEFAULT_APP_VERSION
+        set(value) = prefs.edit().putString(KEY_APP_VERSION, value).apply()
 }

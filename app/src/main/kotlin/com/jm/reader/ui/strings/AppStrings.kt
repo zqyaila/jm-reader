@@ -171,6 +171,32 @@ data class AppStrings(
     val cancel: String,
     val confirm: String,
     val refreshPage: String,
+    // API errors - a bare numeric code is never shown to the reader
+    val errNetwork: String,
+    val errTimeout: String,
+    val errServer: String,
+    val errNotFound: String,
+    val errForbidden: String,
+    val errUnauthorized: String,
+    val errRateLimited: String,
+    val errNoHost: String,
+    val errRequestFailedFmt: String, // "請求失敗 (%1\$d)"
+    // Adaptive search
+    val searchAdaptiveHint: String,
+    val searchJumpIdFmt: String,     // "開啟 JM%1\$s"
+    // Daily check-in
+    val alreadySignedToday: String,
+    val signInSuccessMsg: String,
+    val signInFailedMsg: String,
+    val dailyProgressFmt: String,    // "連續簽到進度 %1\$s"
+    // Registration
+    val registerNeedConfirm: String,
+    val registerFailed: String,
+    // Library / local history
+    val libraryHistoryHint: String,
+    val historyResumeFmt: String,    // "上次讀到 %1\$s"
+    // Member
+    val sessionExpired: String,
 ) {
     companion object {
         fun forLanguage(lang: UiLanguage): AppStrings = when (lang) {
@@ -333,6 +359,26 @@ val ZhCN = AppStrings(
     cancel = "取消",
     confirm = "确定",
     refreshPage = "重试",
+    errNetwork = "网络连接失败，请检查网络或代理",
+    errTimeout = "连接超时，请稍后重试",
+    errServer = "服务器繁忙，请稍后重试",
+    errNotFound = "内容不存在或已下架",
+    errForbidden = "当前网络被限制访问，请切换线路或代理",
+    errUnauthorized = "登录已过期，请重新登录",
+    errRateLimited = "请求过于频繁，请稍后再试",
+    errNoHost = "无法连接服务器，请检查网络后重试",
+    errRequestFailedFmt = "请求失败 (%1\$d)",
+    searchAdaptiveHint = "搜索漫画 / 作者 / JM号",
+    searchJumpIdFmt = "打开 JM%1\$s",
+    alreadySignedToday = "今日已签到",
+    signInSuccessMsg = "签到成功",
+    signInFailedMsg = "签到失败，请稍后重试",
+    dailyProgressFmt = "连续签到进度 %1\$s",
+    registerNeedConfirm = "注册成功！请到邮箱确认后再登录",
+    registerFailed = "注册失败，请检查填写的信息",
+    libraryHistoryHint = "本地历史无需登录，离线也能查看",
+    historyResumeFmt = "上次读到 %1\$s",
+    sessionExpired = "登录已过期，请重新登录",
 )
 
 /** 繁體中文 */
@@ -487,6 +533,26 @@ val ZhTW = AppStrings(
     cancel = "取消",
     confirm = "確定",
     refreshPage = "重試",
+    errNetwork = "網路連線失敗，請檢查網路或代理",
+    errTimeout = "連線逾時，請稍後重試",
+    errServer = "伺服器繁忙，請稍後重試",
+    errNotFound = "內容不存在或已下架",
+    errForbidden = "目前網路被限制存取，請切換線路或代理",
+    errUnauthorized = "登入已過期，請重新登入",
+    errRateLimited = "請求過於頻繁，請稍後再試",
+    errNoHost = "無法連線伺服器，請檢查網路後重試",
+    errRequestFailedFmt = "請求失敗 (%1\$d)",
+    searchAdaptiveHint = "搜尋漫畫 / 作者 / JM號",
+    searchJumpIdFmt = "開啟 JM%1\$s",
+    alreadySignedToday = "今日已簽到",
+    signInSuccessMsg = "簽到成功",
+    signInFailedMsg = "簽到失敗，請稍後重試",
+    dailyProgressFmt = "連續簽到進度 %1\$s",
+    registerNeedConfirm = "註冊成功！請到信箱確認後再登入",
+    registerFailed = "註冊失敗，請檢查填寫的資訊",
+    libraryHistoryHint = "本地歷史無需登入，離線也能查看",
+    historyResumeFmt = "上次讀到 %1\$s",
+    sessionExpired = "登入已過期，請重新登入",
 )
 
 /** English */
@@ -641,4 +707,24 @@ val En = AppStrings(
     cancel = "Cancel",
     confirm = "OK",
     refreshPage = "Retry",
+    errNetwork = "Network unavailable. Check your connection or proxy.",
+    errTimeout = "Connection timed out. Try again later.",
+    errServer = "Server busy. Try again later.",
+    errNotFound = "Not found or removed",
+    errForbidden = "Access blocked on this network. Switch route or proxy.",
+    errUnauthorized = "Session expired, please log in again",
+    errRateLimited = "Too many requests. Try again later.",
+    errNoHost = "Cannot reach the server. Check your connection.",
+    errRequestFailedFmt = "Request failed (%1\$d)",
+    searchAdaptiveHint = "Search comics / authors / JM id",
+    searchJumpIdFmt = "Open JM%1\$s",
+    alreadySignedToday = "Checked in today",
+    signInSuccessMsg = "Check-in complete",
+    signInFailedMsg = "Check-in failed, try again later",
+    dailyProgressFmt = "Streak progress %1\$s",
+    registerNeedConfirm = "Registered! Confirm your email before logging in",
+    registerFailed = "Registration failed. Check the information you entered.",
+    libraryHistoryHint = "Local history needs no account and works offline",
+    historyResumeFmt = "Last read %1\$s",
+    sessionExpired = "Session expired, please log in again",
 )

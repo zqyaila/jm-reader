@@ -40,8 +40,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +64,7 @@ import com.jm.reader.data.model.ComicDetail
 import com.jm.reader.data.model.ReadData
 import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.LocalAppStrings
+import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.components.ErrorView
@@ -74,6 +77,7 @@ import kotlinx.coroutines.launch
 fun ReaderScreen(navController: NavHostController, albumId: String, readId: String) {
     val repo = LocalRepository.current
     val session = LocalSession.current
+    val history = LocalHistoryManager.current
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
 
@@ -96,6 +100,9 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
         when (val r = repo.comicRead(chapterId)) {
             is RepoResult.Ok -> {
                 read = r.data
+                // Local history works without an account; the server copy is best-effort.
+                history.record(albumId, detail?.name.orEmpty(), detail?.authors?.firstOrNull(), detail?.addtime ?: 0L)
+                history.recordProgress(albumId, r.data.name, 1)
                 if (session.isLoggedIn) repo.addWatch(chapterId)
             }
             is RepoResult.Err -> error = r.message
@@ -106,13 +113,25 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
 
     LaunchedEffect(albumId) {
         when (val r = repo.getAlbum(albumId)) {
-            is RepoResult.Ok -> detail = r.data
+            is RepoResult.Ok -> {
+                detail = r.data
+                history.record(albumId, r.data.name, r.data.authors.firstOrNull(), r.data.addtime)
+            }
             is RepoResult.Err -> Unit
         }
     }
 
     val chapters = detail?.series?.sortedBy { it.sort } ?: emptyList()
     val currentIndex = chapters.indexOfFirst { it.id == currentReadId }
+    val currentChapterName = chapters.firstOrNull { it.id == currentReadId }?.name ?: read?.name
+
+    // Persist the reading position when the reader is left (mirrors JMComic-qt, which writes its
+    // `history` row on ReturnPage / after the chapter page list is loaded).
+    val latestProgress by rememberUpdatedState(progress)
+    val latestChapter by rememberUpdatedState(currentChapterName)
+    DisposableEffect(albumId) {
+        onDispose { history.recordProgress(albumId, latestChapter, latestProgress + 1) }
+    }
 
     // Track vertical scroll progress.
     LaunchedEffect(listState, read) {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -22,33 +23,39 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jm.reader.data.model.ComicListItem
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.ui.LocalAppStrings
+import com.jm.reader.ui.theme.GlassBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppTopBar(title: String, onBack: (() -> Unit)? = null) {
     val s = LocalAppStrings.current
-    TopAppBar(
-        title = { Text(title, maxLines = 1) },
-        navigationIcon = {
-            if (onBack != null) {
-                androidx.compose.material3.IconButton(onClick = onBack) {
-                    androidx.compose.material3.Icon(
-                        androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = s.back,
-                    )
+    // Frosted bar: the blurred backdrop shows through instead of an opaque strip.
+    GlassBar(Modifier.fillMaxWidth()) {
+        TopAppBar(
+            title = { Text(title, maxLines = 1) },
+            navigationIcon = {
+                if (onBack != null) {
+                    androidx.compose.material3.IconButton(onClick = onBack) {
+                        androidx.compose.material3.Icon(
+                            androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = s.back,
+                        )
+                    }
                 }
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-    )
+            },
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                titleContentColor = MaterialTheme.colorScheme.onSurface,
+                navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        )
+    }
 }
 
 @Composable

@@ -64,6 +64,7 @@ import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
 private data class HomeUiState(
@@ -136,19 +137,19 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
             state.loading && state.latest.isEmpty() -> LoadingView()
             state.error != null && state.latest.isEmpty() -> ErrorView(state.error!!, onRetry = { scope.launch { loadInitial() } })
             else -> Column(Modifier.fillMaxSize()) {
-                // Search bar
+                // Search bar - one adaptive box, no 作品 / 作者 / ID chooser.
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                        .glassSurface(shape = RoundedCornerShape(24.dp))
                         .clickable { navController.navigate(Routes.search()) }
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        s.searchComicHint,
+                        s.searchAdaptiveHint,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(start = 10.dp),
@@ -256,7 +257,10 @@ private fun QuickLinks(navController: NavHostController) {
                 Box(
                     Modifier
                         .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .glassSurface(
+                            shape = RoundedCornerShape(12.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)

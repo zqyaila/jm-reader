@@ -77,6 +77,8 @@ import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.AppStrings
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
 private data class DetailUiState(
@@ -139,6 +141,8 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
     }
 
     Scaffold(
+        // Near-opaque canvas: the action row is the only glass surface on this screen.
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = { AppTopBar(s.comicDetail, onBack = { navController.popBackStack() }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -181,7 +185,15 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                         }
 
                         item {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                                    .glassSurface(shape = GlassShapeSmall)
+                                    .padding(horizontal = 10.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
                                 Button(
                                     onClick = {
                                         if (detail.isPaid) {

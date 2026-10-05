@@ -22,6 +22,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,12 +62,22 @@ import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.AppStrings
+import com.jm.reader.ui.theme.GlassBar
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * 书库 with three independent tabs.
+ *
+ * Only **收藏** is server-side and therefore needs an account. **历史** and **下载** are local, so
+ * the screen opens on 历史 when nobody is logged in instead of walling the whole tab behind a
+ * login prompt - that wall was what made the local history look unusable.
+ */
 @Composable
 fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifier) {
     val repo = LocalRepository.current
@@ -73,40 +86,58 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
     val history = LocalHistoryManager.current
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
     // Observed instead of read once: the login state changes while this screen is on screen.
     val loggedIn by session.loggedInFlow.collectAsState()
+    // Start on the first tab that actually works for the current login state.
+    var tab by rememberSaveable { mutableIntStateOf(if (session.isLoggedIn) TAB_FAVORITES else TAB_HISTORY) }
 
     Scaffold(
+        modifier = modifier,
+        // Near-opaque canvas so list rows and labels keep their contrast; the tab header above
+        // is the glass surface.
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Column(Modifier.fillMaxWidth()) {
-                Text(
-                    s.library,
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 0.dp),
-                )
-                TabRow(selectedTabIndex = tab) {
-                    Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(s.favorites) })
-                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(s.history) })
-                    Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(s.downloads) })
+            GlassBar(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    Text(
+                        s.library,
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 0.dp),
+                    )
+                    TabRow(
+                        selectedTabIndex = tab,
+                        containerColor = Color.Transparent,
+                        divider = {},
+                        indicator = { positions ->
+                            if (tab < positions.size) {
+                                TabRowDefaults.SecondaryIndicator(
+                                    Modifier.tabIndicatorOffset(positions[tab]),
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        },
+                    ) {
+                        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(s.favorites) })
+                        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(s.history) })
+                        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(s.downloads) })
+                    }
                 }
             }
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
-            // Favorites are server-side and need an account; history and downloads are local.
-            if (tab == 0 && !loggedIn) {
-                LoginRequired(navController, s)
-            } else {
-                when (tab) {
-                    0 -> FavoritesList(navController, repo, s)
-                    1 -> HistoryList(navController, repo, history, s)
-                    2 -> DownloadsList(navController, downloadManager, s, scope)
-                }
+            when (tab) {
+                // Favorites are server-side and need an account; history and downloads are local.
+                0 -> if (loggedIn) FavoritesList(navController, repo, s) else LoginRequired(navController, s)
+                1 -> HistoryList(navController, repo, history, s)
+                else -> DownloadsList(navController, downloadManager, s, scope)
             }
         }
     }
 }
+
+private const val TAB_FAVORITES = 0
+private const val TAB_HISTORY = 1
 
 @Composable
 private fun LoginRequired(navController: NavHostController, s: AppStrings) {
@@ -170,7 +201,19 @@ private fun HistoryList(
 
     Box(Modifier.fillMaxSize()) {
         if (entries.isEmpty()) {
-            EmptyView(s.emptyHistory, Modifier.fillMaxSize())
+            Column(
+                Modifier.fillMaxSize().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(s.emptyHistory, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    s.libraryHistoryHint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+            }
         } else {
             Column(Modifier.fillMaxSize()) {
                 Row(
@@ -224,7 +267,12 @@ private fun HistoryRow(
     onDelete: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 10.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+            .glassSurface(shape = GlassShapeSmall)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
@@ -234,15 +282,33 @@ private fun HistoryRow(
                 .build(),
             contentDescription = entry.name,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(52.dp, 70.dp).clip(RoundedCornerShape(6.dp)),
+            modifier = Modifier.size(52.dp, 70.dp).clip(RoundedCornerShape(10.dp)),
         )
         Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(entry.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                entry.name.ifBlank { entry.albumId },
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
             entry.author?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (entry.hasProgress) {
+                val resume = listOfNotNull(
+                    entry.episodeName?.takeIf { name -> name.isNotBlank() },
+                    "P${entry.pageIndex}",
+                ).joinToString(" · ")
+                Text(
+                    s.historyResumeFmt.format(resume),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -281,9 +347,12 @@ private fun DownloadsList(
                 items(albums.sortedByDescending { it.timestamp }, key = { it.albumId }) { album ->
                     val prog = downloading[album.albumId]
                     Row(
-                        Modifier.fillMaxWidth().clickable {
-                            navController.navigate(Routes.offlineReader(album.albumId))
-                        }.padding(horizontal = 14.dp, vertical = 12.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                            .glassSurface(shape = GlassShapeSmall)
+                            .clickable { navController.navigate(Routes.offlineReader(album.albumId)) }
+                            .padding(horizontal = 10.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {

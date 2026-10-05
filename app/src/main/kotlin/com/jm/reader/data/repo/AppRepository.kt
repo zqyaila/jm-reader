@@ -13,6 +13,7 @@ import com.jm.reader.data.model.NovelItem
 import com.jm.reader.data.model.ReadData
 import com.jm.reader.data.model.TagItem
 import com.jm.reader.data.model.bool
+import com.jm.reader.data.model.int
 import com.jm.reader.data.model.long
 import com.jm.reader.data.model.obj
 import com.jm.reader.data.model.objList
@@ -20,8 +21,11 @@ import com.jm.reader.data.model.str
 import com.jm.reader.data.model.strList
 import com.jm.reader.data.model.strOrNull
 import com.jm.reader.data.net.ApiClient
+import com.jm.reader.data.net.ApiError
 import com.jm.reader.data.net.HostManager
 import com.jm.reader.data.session.SessionManager
+import com.jm.reader.ui.strings.AppStrings
+import com.jm.reader.util.Versions
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -36,12 +40,25 @@ sealed class RepoResult<out T> {
     }
 }
 
-/** One page of `search` results: the comics plus the API-reported total and the search scope. */
+/**
+ * One page of `search` results: the comics plus the API-reported total and search scope.
+ *
+ * `redirectAid` is set by the server when the query is an album id: the API answers with
+ * `{"total":1,"redirect_aid":<id>,"content":[]}` instead of a result list, which is exactly what
+ * makes a single adaptive search box possible.
+ */
 data class SearchPage(
     val query: String = "",
     val searchType: String = "site",
     val total: Int = 0,
+    val redirectAid: String? = null,
     val items: List<ComicListItem> = emptyList(),
+)
+
+/** Outcome of `POST /daily_chk`. */
+data class DailyCheckResult(
+    val alreadyCheckedIn: Boolean,
+    val message: String?,
 )
 
 /**
@@ -55,29 +72,55 @@ class AppRepository(
 ) {
     companion object {
         /**
-         * Returned by [login] when the server rejects the username / password pair. Screens map it
-         * to a localised message instead of surfacing the raw API failure.
+         * Returned by [login] when the server rejects the username / password pair *and* sent no
+         * explanation of its own. Screens map it to a localised message.
          */
         const val ERR_BAD_CREDENTIALS = "jm.err.bad_credentials"
+
+        /** Scope used by the adaptive search box ("站内搜索"). */
+        const val SITE_SEARCH = "site"
+
+        /** Gender values the mobile `/register` endpoint expects (see JMComic-qt `RegisterReq`). */
+        const val GENDER_MALE = "Male"
+        const val GENDER_FEMALE = "Female"
     }
 
     // -----------------------------------------------------------------------
     // Bootstrap
     // -----------------------------------------------------------------------
 
-    /** Ensures an API host is configured, then refreshes app settings (img_host). */
+    /**
+     * Ensures a **working** API host is configured, then refreshes app settings (img_host).
+     *
+     * [HostManager.bootstrap] already probes every candidate with `GET /setting`; if even that
+     * fails we retry once (the network may have been flaky) before giving up with a readable
+     * message instead of a raw failure.
+     */
     suspend fun bootstrap(): RepoResult<String> {
-        hostManager.bootstrap()
-        if (session.apiUrl.isNullOrBlank()) return RepoResult.Err("無法取得 API 主機")
+        var url = hostManager.bootstrap().getOrNull()
+        if (url.isNullOrBlank()) {
+            url = hostManager.bootstrap().getOrNull()
+        }
+        if (url.isNullOrBlank()) return RepoResult.Err(ApiError.noHost(session))
         refreshSettings()
-        return RepoResult.Ok(session.apiUrl!!)
+        return RepoResult.Ok(url)
     }
 
     /** GET /setting - stores img_host (cover CDN) into the session. */
     suspend fun refreshSettings() {
         val r = api.get("setting", mapOf("app_img_shunt" to "1", "t" to System.currentTimeMillis() / 1000))
         if (r is ApiClient.Result.Success) {
-            r.obj?.let { session.imgHost = it.str("img_host") }
+            r.obj?.let { obj ->
+                val host = obj.str("img_host")
+                if (host.isNotBlank()) session.imgHost = host
+                // `jm3_version` is the *mobile* app version (the plain `version` field is the
+                // legacy 1.x one); adopt it only when it is newer, exactly like the reference
+                // client, so the Tokenparam header never moves backwards.
+                val announced = obj.str("jm3_version").ifBlank { obj.str("jm3_test_version") }
+                if (announced.isNotBlank() && Versions.compare(announced, session.appVersion) > 0) {
+                    session.appVersion = announced
+                }
+            }
         }
     }
 
@@ -140,8 +183,27 @@ class AppRepository(
         api.get("daily_list", mapOf("user_id" to userId)).toRepoObj()
 
     /** POST /daily_chk {user_id, daily_id} */
-    suspend fun dailyCheck(userId: String, dailyId: String): RepoResult<JSONObject> =
-        api.post("daily_chk", mapOf("user_id" to userId, "daily_id" to dailyId)).toRepoObj()
+    suspend fun dailyCheck(userId: String, dailyId: String): RepoResult<DailyCheckResult> {
+        val r = api.post("daily_chk", mapOf("user_id" to userId, "daily_id" to dailyId))
+        return when (r) {
+            is ApiClient.Result.Success -> {
+                val obj = r.obj
+                if (obj == null) {
+                    // The API answers `{"code":200,"data":[]}` when the caller is not
+                    // authenticated (verified against the live endpoint): say so plainly.
+                    RepoResult.Err(AppStrings.forLanguage(session.language).errUnauthorized)
+                } else {
+                    val msg = obj.str("msg").ifBlank { r.serverMessage.orEmpty() }
+                    val already = listOf("今天已經簽到過了", "已簽到", "已签到", "簽到過", "已完成")
+                        .any { msg.contains(it) }
+                    RepoResult.Ok(DailyCheckResult(alreadyCheckedIn = already, message = msg.ifBlank { null }))
+                }
+            }
+            is ApiClient.Result.ApiFailure ->
+                RepoResult.Err(ApiError.of(session, r.code, r.serverMessage, r.httpStatus))
+            is ApiClient.Result.NetworkFailure -> RepoResult.Err(ApiError.network(session, r.message))
+        }
+    }
 
     /** POST /daily_list/filter {data} */
     suspend fun dailyListFilter(data: String): RepoResult<JSONObject> =
@@ -154,8 +216,8 @@ class AppRepository(
     /**
      * GET /search - keyword search.
      *
-     * @param searchType scope of the search: "site" (default, everything), "work" (titles only)
-     *        or "author" (author names only). The API echoes the scope it actually used.
+     * @param searchType scope of the search: "site" (default, everything), "work" (titles only),
+     *        "author" (author names only), "tag" or "character". The API echoes the scope it used.
      * @param filter optional JSON string for the advanced filter.
      */
     suspend fun search(
@@ -164,6 +226,20 @@ class AppRepository(
         page: Int = 1,
         searchType: String? = null,
     ): RepoResult<List<ComicListItem>> = searchPage(keyword, searchType, page, filter).map { it.items }
+
+    /**
+     * Adaptive search used by the search screen: one box, no mode chooser.
+     *
+     * `search_type=site` is the scope the site itself uses for "站内搜索" and, verified against the
+     * live endpoint, it already matches titles *and* authors *and* tags. When the query is an album
+     * id the server answers with `redirect_aid` instead of a list, which [SearchPage] surfaces so
+     * the UI can jump straight to the album.
+     */
+    suspend fun adaptiveSearch(
+        keyword: String,
+        page: Int = 1,
+        filter: String? = null,
+    ): RepoResult<SearchPage> = searchPage(keyword, SITE_SEARCH, page, filter)
 
     /**
      * GET /search - like [search] but keeps the API-reported `total` (and echoed `search_type`)
@@ -175,14 +251,16 @@ class AppRepository(
         page: Int = 1,
         filter: String? = null,
     ): RepoResult<SearchPage> {
-        val params = mutableMapOf<String, Any>("search_query" to keyword, "page" to page)
+        val params = mutableMapOf<String, Any>("search_query" to keyword, "page" to page, "o" to "mr")
         if (!filter.isNullOrBlank()) params["filter"] = filter
         if (!searchType.isNullOrBlank()) params["search_type"] = searchType
         return api.get("search", params).toRepoList { o, arr ->
+            val redirect = o?.int("redirect_aid", 0) ?: 0
             SearchPage(
                 query = o?.str("search_query")?.ifBlank { keyword } ?: keyword,
-                searchType = o?.str("search_type").orEmpty().ifBlank { searchType ?: "site" },
+                searchType = o?.str("search_type").orEmpty().ifBlank { searchType ?: SITE_SEARCH },
                 total = o?.long("total")?.toInt() ?: 0,
+                redirectAid = if (redirect > 0) redirect.toString() else null,
                 items = parseComicList(o, arr),
             )
         }
@@ -244,39 +322,55 @@ class AppRepository(
     /**
      * POST /login {username, password}
      *
-     * Rejected credentials come back as HTTP 401 with an empty payload; a successful login
-     * returns the member payload. The mobile API never sends a `jwttoken` - the member's `s`
-     * field becomes the AVS cookie that authenticates every later request, so that payload is
-     * what makes [SessionManager.isLoggedIn] true.
+     * A rejected pair comes back as HTTP 401 *and* an envelope with `code: 401`, `data: []` and
+     * `errorMsg` such as "无效的用户名和/或密码" (verified against the live endpoint). That message is
+     * what we hand back so the screen can show it verbatim; [ERR_BAD_CREDENTIALS] is only the
+     * fallback when the server said nothing.
+     *
+     * A success payload carries `jwttoken` (used as `Authorization: Bearer`), plus `uid`, `s`,
+     * `username`, `coin`, `level`… `s` doubles as the web client's `AVS` cookie.
      */
     suspend fun login(username: String, password: String): RepoResult<Member> {
         val r = api.post("login", mapOf("username" to username, "password" to password))
         return when (r) {
             is ApiClient.Result.Success -> {
                 val data = r.obj
-                val memberPayload = data != null &&
-                    (data.str("s").isNotBlank() || data.str("uid").isNotBlank() || data.str("username").isNotBlank())
-                if (r.code == 200 && data != null && memberPayload) {
-                    session.saveAuth(data.str("jwttoken"), data)
-                    RepoResult.Ok(Member.fromJson(data))
-                } else {
-                    RepoResult.Err(data?.str("msg").orEmpty().ifBlank { ERR_BAD_CREDENTIALS })
+                    ?: return RepoResult.Err(
+                        r.serverMessage?.takeIf { it.isNotBlank() } ?: ERR_BAD_CREDENTIALS,
+                    )
+                session.saveAuth(data.str("jwttoken"), data)
+                RepoResult.Ok(Member.fromJson(data))
+            }
+            is ApiClient.Result.ApiFailure -> {
+                val msg = r.serverMessage?.trim().orEmpty()
+                when {
+                    msg.isNotEmpty() -> RepoResult.Err(msg)
+                    r.code == 401 || r.httpStatus == 401 -> RepoResult.Err(ERR_BAD_CREDENTIALS)
+                    else -> RepoResult.Err(ApiError.of(session, r.code, null, r.httpStatus))
                 }
             }
-            is ApiClient.Result.ApiFailure ->
-                RepoResult.Err(if (r.code == 401) ERR_BAD_CREDENTIALS else "登入失敗 (${r.code})")
-            is ApiClient.Result.NetworkFailure -> RepoResult.Err(r.message)
+            is ApiClient.Result.NetworkFailure -> RepoResult.Err(ApiError.network(session, r.message))
         }
     }
 
-    /** POST /register {username,password,password_confirm,email,gender} */
+    /**
+     * POST /register {username,password,password_confirm,email,gender,verification}
+     *
+     * This is the **mobile** endpoint (not the web `/signup`, which is Cloudflare-gated — verified
+     * live: it answers 403). It replies HTTP 200 with an inner status:
+     *   `{"code":200,"data":{"status":"ok","msg":"您已注册。检查您的电子邮箱中的确认链接！"}}`
+     *   `{"code":200,"data":{"status":"fail","errors":["密码长度小于 8"],"msg":"..."}}`
+     *
+     * On success the server's own `msg` is returned so the screen can tell the reader that the
+     * account still needs e-mail confirmation before the first login.
+     */
     suspend fun register(
         username: String,
         password: String,
         passwordConfirm: String,
         email: String,
         gender: String,
-    ): RepoResult<JSONObject> {
+    ): RepoResult<String> {
         val r = api.post(
             "register",
             mapOf(
@@ -285,36 +379,51 @@ class AppRepository(
                 "password_confirm" to passwordConfirm,
                 "email" to email,
                 "gender" to gender,
+                // The mobile endpoint accepts an empty captcha; only the web flow needs one.
+                "verification" to "",
             ),
         )
         return when (r) {
             is ApiClient.Result.Success -> {
-                val failure = registrationFailure(r.obj)
-                if (r.code == 200 && failure == null) RepoResult.Ok(r.obj ?: JSONObject())
-                else RepoResult.Err(failure ?: "註冊失敗 (${r.code})")
+                val failure = registrationFailure(r.obj, r.serverMessage)
+                if (failure != null) {
+                    RepoResult.Err(failure)
+                } else {
+                    RepoResult.Ok(
+                        r.obj?.str("msg").orEmpty().ifBlank {
+                            AppStrings.forLanguage(session.language).registerSuccess
+                        },
+                    )
+                }
             }
-            is ApiClient.Result.ApiFailure -> RepoResult.Err("註冊失敗 (${r.code})")
-            is ApiClient.Result.NetworkFailure -> RepoResult.Err(r.message)
+            is ApiClient.Result.ApiFailure ->
+                RepoResult.Err(ApiError.of(session, r.code, r.serverMessage, r.httpStatus))
+            is ApiClient.Result.NetworkFailure -> RepoResult.Err(ApiError.network(session, r.message))
         }
     }
 
     /**
      * `/register` answers HTTP 200 even when it refuses the submission, reporting
-     * `{ "status": "fail", "msg": "...", "errors": ["..."] }`. Returns the reported problem,
-     * or null when the registration went through.
+     * `{ "status": "fail", "msg": "...", "errors": ["..."] }` (or `status: "ok"` on success).
+     * Returns the reported problem, or null when the registration went through.
      */
-    private fun registrationFailure(obj: JSONObject?): String? {
-        val o = obj ?: return null
-        val errors = o.optJSONArray("errors")
+    private fun registrationFailure(obj: JSONObject?, envelopeMessage: String?): String? {
+        val o = obj ?: return envelopeMessage?.takeIf { it.isNotBlank() }
+        val errors = o.opt("errors")
+        val errorList = when (errors) {
+            is JSONArray -> (0 until errors.length())
+                .mapNotNull { errors.optString(it)?.takeIf { m -> m.isNotBlank() } }
+            is String -> listOfNotNull(errors.takeIf { it.isNotBlank() })
+            else -> emptyList()
+        }
         val status = o.str("status").lowercase()
-        val failed = (errors?.length() ?: 0) > 0 ||
+        val failed = errorList.isNotEmpty() ||
             status == "fail" || status == "error" || status == "false"
         if (!failed) return null
-        return (0 until (errors?.length() ?: 0))
-            .mapNotNull { errors?.optString(it)?.takeIf { m -> m.isNotBlank() } }
-            .joinToString("\n")
+        return errorList.joinToString("\n")
             .ifBlank { o.str("msg") }
-            .ifBlank { "註冊失敗" }
+            .ifBlank { envelopeMessage.orEmpty() }
+            .ifBlank { AppStrings.forLanguage(session.language).registerFailed }
     }
 
     /** POST /forgot {email} */
@@ -542,19 +651,21 @@ class AppRepository(
         when (this) {
             is ApiClient.Result.Success ->
                 if (code == 200) RepoResult.Ok(fn(obj, arr))
-                else RepoResult.Err("API 錯誤 ($code)")
-            is ApiClient.Result.ApiFailure -> RepoResult.Err("API 錯誤 (${code})${message?.let { ": $it" } ?: ""}")
-            is ApiClient.Result.NetworkFailure -> RepoResult.Err(message)
+                else RepoResult.Err(ApiError.of(session, code, serverMessage))
+            is ApiClient.Result.ApiFailure ->
+                RepoResult.Err(ApiError.of(session, code, serverMessage, httpStatus))
+            is ApiClient.Result.NetworkFailure -> RepoResult.Err(ApiError.network(session, message))
         }
 
     private fun ApiClient.Result.toRepoObj(): RepoResult<JSONObject> =
         when (this) {
             is ApiClient.Result.Success ->
                 if (code == 200 && obj != null) RepoResult.Ok(obj)
-                else if (code != 200) RepoResult.Err("API 錯誤 ($code)")
-                else RepoResult.Err("無資料")
-            is ApiClient.Result.ApiFailure -> RepoResult.Err("API 錯誤 (${code})${message?.let { ": $it" } ?: ""}")
-            is ApiClient.Result.NetworkFailure -> RepoResult.Err(message)
+                else if (code != 200) RepoResult.Err(ApiError.of(session, code, serverMessage))
+                else RepoResult.Err(AppStrings.forLanguage(session.language).noData)
+            is ApiClient.Result.ApiFailure ->
+                RepoResult.Err(ApiError.of(session, code, serverMessage, httpStatus))
+            is ApiClient.Result.NetworkFailure -> RepoResult.Err(ApiError.network(session, message))
         }
 
     private fun listFromObjOrArr(o: JSONObject?, arr: JSONArray?): List<ComicListItem> {

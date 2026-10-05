@@ -1,6 +1,7 @@
 package com.jm.reader.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,12 +41,14 @@ fun ComicCard(
             .padding(bottom = 2.dp),
     ) {
         val cover = if (item.image.isNotBlank()) item.image else repo.comicCover(item.id, item.updateAt)
+        val coverShape = RoundedCornerShape(12.dp)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .clip(coverShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
+                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.30f), coverShape),
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)

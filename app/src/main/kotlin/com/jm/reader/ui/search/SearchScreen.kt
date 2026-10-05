@@ -23,19 +23,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -54,12 +52,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
@@ -77,27 +75,26 @@ import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.AppStrings
+import com.jm.reader.ui.theme.GlassShape
+import com.jm.reader.ui.theme.glassSurface
+import com.jm.reader.util.JmId
 import kotlinx.coroutines.launch
 
-/** Search scopes offered on the search screen. */
-private enum class SearchMode(val key: String) {
-    WORK("work"),
-    AUTHOR("author"),
-    ID("id"),
-    ;
-
-    companion object {
-        fun fromKey(key: String?): SearchMode =
-            entries.firstOrNull { it.key == key?.trim()?.lowercase() } ?: WORK
-    }
-}
-
+/**
+ * One adaptive search box.
+ *
+ * There is deliberately **no 作品 / 作者 / ID chooser**: `search_type=site` is the scope the site
+ * itself uses for a general query and, verified against the live endpoint, it matches titles,
+ * authors and tags in one go. When the text is an album id the API answers with `redirect_aid`
+ * and we jump straight to the album; results are grouped by author automatically when the query
+ * is clearly an author name.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SearchScreen(
     navController: NavHostController,
     initialHotTagsOnly: Boolean = false,
-    initialMode: String = "work",
+    @Suppress("UNUSED_PARAMETER") initialMode: String = "work",
     initialQuery: String = "",
 ) {
     val repo = LocalRepository.current
@@ -107,7 +104,6 @@ fun SearchScreen(
     val gridState = rememberLazyGridState()
     val snackbar = remember { SnackbarHostState() }
 
-    var mode by remember { mutableStateOf(SearchMode.fromKey(initialMode)) }
     var query by remember { mutableStateOf(initialQuery) }
     var submitted by remember { mutableStateOf("") }
     var hotTags by remember { mutableStateOf<List<TagItem>>(emptyList()) }
@@ -120,29 +116,46 @@ fun SearchScreen(
     var endReached by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf(false) }
+    var groupByAuthor by remember { mutableStateOf(false) }
+
+    /** Digits only, or a `JM123456` style id, or a link containing one. */
+    fun idCandidate(raw: String): String? = JmId.parse(raw)
 
     suspend fun loadDiscover() {
         when (val h = repo.hotTags()) { is RepoResult.Ok -> hotTags = h.data; is RepoResult.Err -> Unit }
         when (val rr = repo.randomRecommend()) { is RepoResult.Ok -> random = rr.data; is RepoResult.Err -> Unit }
     }
 
-    /** Runs page 1 of a keyword ("site") or author search. */
-    suspend fun runSearch(keyword: String, target: SearchMode) {
-        val kw = keyword.trim()
-        if (kw.isBlank() || target == SearchMode.ID) return
-        submitted = kw
+    /** An author query is one where at least half the hits are credited to the typed text. */
+    fun looksLikeAuthor(keyword: String, items: List<ComicListItem>): Boolean {
+        if (items.size < 3) return false
+        val named = items.count { it.author?.trim().equals(keyword.trim(), ignoreCase = true) }
+        return named * 2 >= items.size
+    }
+
+    suspend fun runSearch(keyword: String) {
+        submitted = keyword
         results = emptyList()
         total = 0
         page = 1
         endReached = false
         error = null
         loading = true
-        val type = if (target == SearchMode.AUTHOR) "author" else "site"
-        when (val r = repo.searchPage(kw, type, 1)) {
+        when (val r = repo.adaptiveSearch(keyword, 1)) {
             is RepoResult.Ok -> {
-                results = r.data.items
-                total = if (r.data.total > 0) r.data.total else r.data.items.size
-                endReached = r.data.items.isEmpty() || results.size >= total
+                val data = r.data
+                val redirect = data.redirectAid
+                if (redirect != null) {
+                    // The server itself resolved the query to an album id.
+                    submitted = ""
+                    loading = false
+                    navController.navigate(Routes.comicDetail(redirect))
+                    return
+                }
+                results = data.items
+                total = if (data.total > 0) data.total else data.items.size
+                groupByAuthor = looksLikeAuthor(keyword, data.items)
+                endReached = data.items.isEmpty() || results.size >= total
                 loading = false
             }
             is RepoResult.Err -> {
@@ -154,10 +167,9 @@ fun SearchScreen(
 
     /** Appends the next page; stops paging when the API stops returning new comics. */
     suspend fun loadMore() {
-        if (loading || loadingMore || endReached || submitted.isBlank() || mode == SearchMode.ID) return
+        if (loading || loadingMore || endReached || submitted.isBlank()) return
         loadingMore = true
-        val type = if (mode == SearchMode.AUTHOR) "author" else "site"
-        when (val r = repo.searchPage(submitted, type, page + 1)) {
+        when (val r = repo.adaptiveSearch(submitted, page + 1)) {
             is RepoResult.Ok -> {
                 val merged = (results + r.data.items).distinctBy { it.id }
                 if (merged.size == results.size) {
@@ -174,10 +186,10 @@ fun SearchScreen(
         loadingMore = false
     }
 
-    /** Opens a comic by its JM id after checking that the album really exists. */
+    /** Direct album open, used when a numeric query is not redirected by the server. */
     fun openById(raw: String) {
-        val id = raw.trim()
-        if (id.isEmpty() || !id.all { it.isDigit() }) {
+        val id = idCandidate(raw)
+        if (id == null) {
             scope.launch { snackbar.showSnackbar(s.searchIdInvalid) }
             return
         }
@@ -196,34 +208,24 @@ fun SearchScreen(
     }
 
     fun submit() {
+        val keyword = query.trim()
+        if (keyword.isBlank()) return
         keyboard?.hide()
-        if (mode == SearchMode.ID) openById(query) else scope.launch { runSearch(query, mode) }
+        scope.launch { runSearch(keyword) }
     }
 
-    fun selectMode(picked: SearchMode) {
-        if (picked == mode) return
-        mode = picked
-        results = emptyList()
-        total = 0
-        page = 1
-        endReached = false
-        error = null
-        submitted = ""
-    }
-
-    LaunchedEffect(initialQuery, initialMode) {
+    LaunchedEffect(initialQuery) {
         loadDiscover()
         if (initialQuery.isNotBlank()) {
-            val start = SearchMode.fromKey(initialMode)
-            mode = start
-            if (start == SearchMode.ID) openById(initialQuery) else runSearch(initialQuery, start)
+            query = initialQuery
+            runSearch(initialQuery)
         }
     }
 
-    LaunchedEffect(gridState, mode) {
+    LaunchedEffect(gridState) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { last ->
-                if (last != null && mode != SearchMode.ID && !loading && !loadingMore && !endReached &&
+                if (last != null && !loading && !loadingMore && !endReached &&
                     submitted.isNotBlank() && last >= gridState.layoutInfo.totalItemsCount - 4
                 ) {
                     loadMore()
@@ -232,62 +234,75 @@ fun SearchScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = { AppTopBar(s.search, onBack = { navController.popBackStack() }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (!initialHotTagsOnly) {
-                SearchModeChips(current = mode, s = s, onSelect = { selectMode(it) })
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = { Text(placeholderFor(mode, s)) },
-                    leadingIcon = {
-                        Icon(
-                            if (mode == SearchMode.AUTHOR) Icons.Filled.Person else Icons.Filled.Search,
-                            contentDescription = null,
-                        )
-                    },
-                    trailingIcon = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (query.isNotBlank()) {
-                                IconButton(onClick = { query = "" }) {
-                                    Icon(Icons.Filled.Clear, contentDescription = s.clear)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text(s.searchAdaptiveHint) },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (query.isNotBlank()) {
+                                    IconButton(onClick = { query = "" }) {
+                                        Icon(Icons.Filled.Clear, contentDescription = s.clear)
+                                    }
                                 }
                             }
-                            if (mode == SearchMode.ID) {
-                                TextButton(onClick = { submit() }, enabled = !opening) {
-                                    Text(s.searchIdOpen)
-                                }
-                            }
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = if (mode == SearchMode.ID) KeyboardType.Number else KeyboardType.Text,
-                        imeAction = if (mode == SearchMode.ID) ImeAction.Go else ImeAction.Search,
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { submit() },
-                        onGo = { submit() },
-                    ),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                )
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { submit() }),
+                        singleLine = true,
+                        shape = GlassShape,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { submit() }, enabled = query.isNotBlank() && !loading) {
+                        Text(s.search)
+                    }
+                }
             }
 
             Box(Modifier.fillMaxSize()) {
                 when {
-                    mode == SearchMode.ID -> IdPane(
-                        s = s,
-                        enabled = query.isNotBlank() && !opening,
-                        opening = opening,
-                        onOpen = { openById(query) },
-                    )
                     loading -> LoadingView()
                     error != null && results.isEmpty() ->
-                        ErrorView(error!!, onRetry = { scope.launch { runSearch(submitted, mode) } })
-                    submitted.isNotBlank() && results.isEmpty() -> EmptyView(s.noResult, Modifier.fillMaxSize())
-                    submitted.isNotBlank() && mode == SearchMode.AUTHOR -> AuthorResultGrid(
+                        ErrorView(error!!, onRetry = { scope.launch { runSearch(submitted) } })
+                    submitted.isNotBlank() && results.isEmpty() -> Column(
+                        Modifier.fillMaxSize(),
+                    ) {
+                        val id = idCandidate(submitted)
+                        if (id != null) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AssistChip(
+                                    onClick = { openById(id) },
+                                    label = { Text(s.searchJumpIdFmt.format(id)) },
+                                    leadingIcon = {
+                                        Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    },
+                                )
+                            }
+                        }
+                        EmptyView(s.noResult, Modifier.fillMaxSize())
+                    }
+                    submitted.isNotBlank() && groupByAuthor -> AuthorResultGrid(
                         results = results,
                         total = total,
                         loadingMore = loadingMore,
@@ -305,7 +320,8 @@ fun SearchScreen(
                         repo = repo,
                         s = s,
                         gridState = gridState,
-                        idCandidate = query.trim().takeIf { it.isNotEmpty() && it.all { c -> c.isDigit() } },
+                        idCandidate = idCandidate(query),
+                        opening = opening,
                         onOpenId = { openById(it) },
                         onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
                     )
@@ -315,78 +331,11 @@ fun SearchScreen(
                         repo = repo,
                         onTagClick = { tag ->
                             query = tag
-                            mode = SearchMode.WORK
-                            scope.launch { runSearch(tag, SearchMode.WORK) }
+                            scope.launch { runSearch(tag) }
                         },
                         onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
                     )
                 }
-            }
-        }
-    }
-}
-
-private fun placeholderFor(mode: SearchMode, s: AppStrings): String = when (mode) {
-    SearchMode.WORK -> s.searchComicHint
-    SearchMode.AUTHOR -> s.searchAuthorHint
-    SearchMode.ID -> s.searchIdHint
-}
-
-@Composable
-private fun SearchModeChips(current: SearchMode, s: AppStrings, onSelect: (SearchMode) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        FilterChip(
-            selected = current == SearchMode.WORK,
-            onClick = { onSelect(SearchMode.WORK) },
-            label = { Text(s.searchWork) },
-        )
-        FilterChip(
-            selected = current == SearchMode.AUTHOR,
-            onClick = { onSelect(SearchMode.AUTHOR) },
-            label = { Text(s.searchAuthor) },
-            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, modifier = Modifier.size(16.dp)) },
-        )
-        FilterChip(
-            selected = current == SearchMode.ID,
-            onClick = { onSelect(SearchMode.ID) },
-            label = { Text(s.searchById) },
-        )
-    }
-}
-
-@Composable
-private fun IdPane(s: AppStrings, enabled: Boolean, opening: Boolean, onOpen: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Icon(
-            Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(40.dp),
-        )
-        Text(
-            s.searchIdHint,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(top = 12.dp),
-        )
-        Text(
-            s.searchLooksLikeId,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-        Button(onClick = onOpen, enabled = enabled, modifier = Modifier.padding(top = 16.dp)) {
-            if (opening) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Text(s.searchIdOpen)
             }
         }
     }
@@ -428,6 +377,7 @@ private fun WorkResultGrid(
     s: AppStrings,
     gridState: LazyGridState,
     idCandidate: String?,
+    opening: Boolean,
     onOpenId: (String) -> Unit,
     onItemClick: (ComicListItem) -> Unit,
 ) {
@@ -443,8 +393,15 @@ private fun WorkResultGrid(
             item(span = { GridItemSpan(3) }, key = "id-hint") {
                 AssistChip(
                     onClick = { onOpenId(idCandidate) },
-                    label = { Text("${s.searchById} $idCandidate") },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    enabled = !opening,
+                    label = { Text(s.searchJumpIdFmt.format(idCandidate)) },
+                    leadingIcon = {
+                        if (opening) {
+                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+                    },
                 )
             }
         }
@@ -459,8 +416,8 @@ private fun WorkResultGrid(
 }
 
 /**
- * Author search results, grouped by author name so every matched author keeps their works
- * together (mirrors how the JM site presents an author query).
+ * Author results, grouped by author name so every matched author keeps their works together.
+ * Selected automatically when the query looks like an author name.
  */
 @Composable
 private fun AuthorResultGrid(
@@ -578,7 +535,11 @@ private fun RandomRow(
     onClick: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .glassSurface(shape = RoundedCornerShape(14.dp))
+            .padding(6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -587,7 +548,7 @@ private fun RandomRow(
             model = ImageRequest.Builder(LocalContext.current).data(cover).crossfade(true).build(),
             contentDescription = item.name,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(56.dp, 74.dp).clip(RoundedCornerShape(6.dp)),
+            modifier = Modifier.size(56.dp, 74.dp).clip(RoundedCornerShape(10.dp)),
         )
         Column(Modifier.weight(1f).padding(top = 4.dp)) {
             Text(item.name, maxLines = 2, style = MaterialTheme.typography.bodyMedium)
