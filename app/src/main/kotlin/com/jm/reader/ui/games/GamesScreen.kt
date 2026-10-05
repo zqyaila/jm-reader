@@ -39,6 +39,8 @@ import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.components.AppTopBar
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
@@ -77,18 +79,23 @@ fun GamesScreen(navController: NavHostController) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(items, key = { it.id }) { game ->
-                        Column(Modifier.clickable {
-                            if (game.link.isNotBlank()) {
-                                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(game.link))) }
-                            }
-                        }) {
+                        Column(
+                            Modifier
+                                .glassSurface(shape = GlassShapeSmall)
+                                .clickable {
+                                    if (game.link.isNotBlank()) {
+                                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(game.link))) }
+                                    }
+                                }
+                                .padding(6.dp),
+                        ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context).data(repo.imgUrl(game.image)).crossfade(true).build(),
                                 contentDescription = game.name,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)),
+                                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)),
                             )
-                            Text(game.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                            Text(game.name, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp, bottom = 2.dp))
                         }
                     }
                 }

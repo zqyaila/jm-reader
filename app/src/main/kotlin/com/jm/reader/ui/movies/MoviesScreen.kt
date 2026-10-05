@@ -41,6 +41,8 @@ import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
 @Composable
@@ -76,14 +78,19 @@ fun MoviesScreen(navController: NavHostController) {
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(items, key = { it.id }) { movie ->
-                        Column(Modifier.clickable { navController.navigate(Routes.movieDetail(movie.id)) }) {
+                        Column(
+                            Modifier
+                                .glassSurface(shape = GlassShapeSmall)
+                                .clickable { navController.navigate(Routes.movieDetail(movie.id)) }
+                                .padding(6.dp),
+                        ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(LocalContext.current).data(repo.imgUrl(movie.photo)).crossfade(true).build(),
                                 contentDescription = movie.title,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)),
                             )
-                            Text(movie.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                            Text(movie.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp, bottom = 2.dp))
                         }
                     }
                 }

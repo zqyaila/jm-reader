@@ -33,6 +33,8 @@ import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.theme.GlassShape
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -72,7 +74,14 @@ fun CategoriesScreen(navController: NavHostController, modifier: Modifier = Modi
                     )
                 }
                 items(categories, key = { it.slug }) { cat ->
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    // Each group is a glass pane, so the category page reads as layered glass.
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                            .glassSurface(shape = GlassShape)
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
                         Text(
                             cat.title,
                             style = MaterialTheme.typography.titleMedium,

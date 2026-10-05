@@ -44,6 +44,8 @@ import com.jm.reader.ui.components.AppTopBar
 import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -76,14 +78,19 @@ fun BlogsScreen(navController: NavHostController) {
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(items, key = { it.id }) { blog ->
                         Column(
-                            Modifier.fillMaxWidth().clickable {
-                                scope.launch {
-                                    when (val r = repo.blogInfo(blog.id)) {
-                                        is RepoResult.Ok -> viewing = r.data
-                                        is RepoResult.Err -> Unit
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                                .glassSurface(shape = GlassShapeSmall)
+                                .clickable {
+                                    scope.launch {
+                                        when (val r = repo.blogInfo(blog.id)) {
+                                            is RepoResult.Ok -> viewing = r.data
+                                            is RepoResult.Err -> Unit
+                                        }
                                     }
                                 }
-                            }.padding(horizontal = 14.dp, vertical = 12.dp),
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                         ) {
                             Text(blog.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             if (blog.image.isNotBlank()) {

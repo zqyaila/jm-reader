@@ -52,6 +52,8 @@ import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
 @Composable
@@ -112,7 +114,12 @@ fun NovelsScreen(navController: NavHostController) {
 @Composable
 private fun NovelRow(novel: NovelItem, repo: com.jm.reader.data.repo.AppRepository, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+            .glassSurface(shape = GlassShapeSmall)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {

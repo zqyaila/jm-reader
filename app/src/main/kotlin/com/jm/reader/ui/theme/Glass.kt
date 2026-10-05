@@ -90,15 +90,26 @@ fun Modifier.platformBlur(radius: Dp, unbounded: Boolean = true): Modifier =
 @Composable
 fun backdropBrush(): Brush = if (isSystemInDarkTheme()) BackdropBrush else BackdropBrushLight
 
+/** Which kind of glass surface, i.e. how dense its fog has to be for legibility. */
+enum class GlassKind {
+    /** Cards, list rows, form panels: always over the app canvas. */
+    Panel,
+
+    /** Top bar: over the canvas, never under scrolling content. */
+    TopBar,
+
+    /** Bottom navigation: content scrolls underneath, so it needs the densest fog. */
+    BottomBar,
+}
+
 @Composable
-fun glassFogColor(forBar: Boolean = false): Color {
+fun glassFogColor(kind: GlassKind = GlassKind.Panel): Color {
     val dark = isSystemInDarkTheme()
     val base = if (dark) GlassFogDark else GlassFogLight
-    val alpha = when {
-        dark && forBar -> GlassBarFogAlphaDark
-        dark -> GlassPanelFogAlphaDark
-        forBar -> GlassBarFogAlphaLight
-        else -> GlassPanelFogAlphaLight
+    val alpha = when (kind) {
+        GlassKind.Panel -> if (dark) GlassPanelFogAlphaDark else GlassPanelFogAlphaLight
+        GlassKind.TopBar -> if (dark) GlassTopBarFogAlphaDark else GlassTopBarFogAlphaLight
+        GlassKind.BottomBar -> if (dark) GlassBottomBarFogAlphaDark else GlassBottomBarFogAlphaLight
     }
     return base.copy(alpha = alpha)
 }
@@ -149,7 +160,7 @@ private fun Modifier.sampledBackdrop(layer: GraphicsLayer, blurRadius: Dp): Modi
 @Composable
 fun Modifier.liquidGlass(
     shape: Shape = GlassShape,
-    forBar: Boolean = false,
+    kind: GlassKind = GlassKind.Panel,
     backdropLayer: GraphicsLayer? = null,
     blurRadius: Dp = GlassBlurRadius,
     elevation: Dp = 16.dp,
@@ -157,7 +168,7 @@ fun Modifier.liquidGlass(
     borderColor: Color? = null,
     borderWidth: Dp = 1.dp,
 ): Modifier {
-    val fogColor = fog ?: glassFogColor(forBar)
+    val fogColor = fog ?: glassFogColor(kind)
     val rim = glassRimBrush()
 
     var base = this
@@ -217,9 +228,11 @@ fun Modifier.glassSurface(
     tint: Color? = null,
     borderColor: Color? = null,
     borderWidth: Dp = 1.dp,
+    elevation: Dp = 8.dp,
 ): Modifier = liquidGlass(
     shape = shape,
-    elevation = 10.dp,
+    kind = GlassKind.Panel,
+    elevation = elevation,
     fog = tint,
     borderColor = borderColor,
     borderWidth = borderWidth,
@@ -237,6 +250,7 @@ fun GlassPanel(
     Box(
         modifier.liquidGlass(
             shape = shape,
+            kind = GlassKind.Panel,
             blurRadius = blurRadius,
             fog = tint,
         ),
@@ -249,13 +263,14 @@ fun GlassPanel(
  * Bar (top bar / bottom navigation). Full-bleed by default; pass a rounded [shape] plus outer
  * padding for the floating "pill" look.
  *
- * [backdropLayer] is optional on purpose: pass `LocalPageBackdrop.current` when the bar lives
- * outside [PageBackdropHost] to get the real blurred backdrop behind it.
+ * [backdropLayer] is optional on purpose: pass the page recording when the bar lives outside it to
+ * get the real blurred backdrop behind the bar.
  */
 @Composable
 fun GlassBar(
     modifier: Modifier = Modifier,
     shape: Shape = RectangleShape,
+    kind: GlassKind = GlassKind.TopBar,
     tint: Color? = null,
     backdropLayer: GraphicsLayer? = null,
     content: @Composable () -> Unit,
@@ -266,7 +281,7 @@ fun GlassBar(
                 .matchParentSize()
                 .liquidGlass(
                     shape = shape,
-                    forBar = true,
+                    kind = kind,
                     backdropLayer = backdropLayer,
                     fog = tint,
                 ),

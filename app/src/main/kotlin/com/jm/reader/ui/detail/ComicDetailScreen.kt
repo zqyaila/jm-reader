@@ -240,65 +240,74 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                         }
 
                         item {
-                            Text(detail.description.ifBlank { s.noDescription }, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
-                        }
-
-                        if (detail.authors.isNotEmpty()) {
-                            item {
-                                // Tapping an author jumps straight to an author search for them.
-                                FlowRow(
-                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(
-                                        s.authorLabel,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    detail.authors.forEach { author ->
+                            // Meta pane: description / authors / tags / counters share one glass
+                            // surface so the detail page reads as layered glass too.
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    .glassSurface(shape = GlassShapeSmall)
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            ) {
+                                Text(
+                                    detail.description.ifBlank { s.noDescription },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                if (detail.authors.isNotEmpty()) {
+                                    // Tapping an author jumps straight to an author search.
+                                    FlowRow(
+                                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
                                         Text(
-                                            author,
+                                            s.authorLabel,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(horizontal = 2.dp).clickable {
-                                                navController.navigate(Routes.search(mode = "author", q = author))
-                                            },
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
+                                        detail.authors.forEach { author ->
+                                            Text(
+                                                author,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(horizontal = 2.dp).clickable {
+                                                    navController.navigate(Routes.search(mode = "author", q = author))
+                                                },
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        }
-                        if (detail.tags.isNotEmpty()) {
-                            item {
-                                FlowRow(
-                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                                ) {
-                                    Text(
-                                        s.tagLabel,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                    detail.tags.forEach { tag ->
+                                if (detail.tags.isNotEmpty()) {
+                                    FlowRow(
+                                        Modifier.fillMaxWidth().padding(top = 6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
                                         Text(
-                                            "#$tag",
+                                            s.tagLabel,
                                             style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(horizontal = 2.dp).clickable {
-                                                navController.navigate(Routes.search(mode = "work", q = tag))
-                                            },
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
+                                        detail.tags.forEach { tag ->
+                                            Text(
+                                                "#$tag",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.padding(horizontal = 2.dp).clickable {
+                                                    navController.navigate(Routes.search(mode = "work", q = tag))
+                                                },
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        }
-                        item {
-                            Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Text("${s.views} ${detail.totalViews}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${s.pages} ${detail.totalPhotos}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text("${s.likes} ${detail.likes}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(
+                                    Modifier.padding(top = 8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                ) {
+                                    Text("${s.views} ${detail.totalViews}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("${s.pages} ${detail.totalPhotos}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("${s.likes} ${detail.likes}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
                             }
                         }
 

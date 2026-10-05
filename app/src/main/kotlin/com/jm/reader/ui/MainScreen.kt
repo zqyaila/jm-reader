@@ -56,6 +56,7 @@ import com.jm.reader.ui.theme.BrandOrangeDeep
 import com.jm.reader.ui.theme.BrandOrangeSoft
 import com.jm.reader.ui.theme.DarkBg
 import com.jm.reader.ui.theme.GlassBar
+import com.jm.reader.ui.theme.GlassKind
 import com.jm.reader.ui.theme.GlassShapeLarge
 import com.jm.reader.ui.theme.GlassShapeSmall
 import kotlin.math.roundToInt
@@ -137,6 +138,8 @@ private fun GlassBottomNav(
     GlassBar(
         modifier = modifier,
         shape = GlassShapeLarge,
+        // Content scrolls underneath this bar, so it uses the densest fog.
+        kind = GlassKind.BottomBar,
         backdropLayer = backdropLayer,
     ) {
         BoxWithConstraints(

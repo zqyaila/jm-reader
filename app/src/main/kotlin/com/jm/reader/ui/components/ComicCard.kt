@@ -1,7 +1,6 @@
 package com.jm.reader.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,20 +36,23 @@ fun ComicCard(
     /** Show the author under the title (used by the search grids). */
     showAuthor: Boolean = false,
 ) {
+    // The whole tile is one glass pane: cover, category chip and caption all sit on the same
+    // frosted surface, which is what makes a grid of them read as glass rather than as floating
+    // text over the canvas.
     Column(
         modifier = modifier
             .clickable(onClick = onClick)
-            .padding(bottom = 2.dp),
+            .glassSurface(shape = GlassShapeSmall, elevation = 6.dp)
+            .padding(6.dp),
     ) {
         val cover = if (item.image.isNotBlank()) item.image else repo.comicCover(item.id, item.updateAt)
-        val coverShape = RoundedCornerShape(12.dp)
+        val coverShape = RoundedCornerShape(10.dp)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
                 .clip(coverShape)
-                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f))
-                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.30f), coverShape),
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)),
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(LocalContext.current)
@@ -80,15 +82,8 @@ fun ComicCard(
                 )
             }
         }
-        // Caption on its own glass plate: the canvas is deliberately translucent, so grid text
-        // must not sit straight on the gradient.
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 4.dp)
-                .glassSurface(shape = GlassShapeSmall)
-                .padding(horizontal = 7.dp, vertical = 5.dp),
-        ) {
+        // Caption: inside the same pane, so it only needs padding (not a second glass plate).
+        Column(Modifier.fillMaxWidth().padding(top = 5.dp, start = 2.dp, end = 2.dp, bottom = 1.dp)) {
             Text(
                 text = item.name,
                 style = MaterialTheme.typography.bodySmall,

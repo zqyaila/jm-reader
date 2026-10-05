@@ -42,6 +42,8 @@ import com.jm.reader.ui.components.AppTopBar
 import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
 @Composable
@@ -72,7 +74,12 @@ fun ForumScreen(navController: NavHostController) {
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(items, key = { it.cid }) { post ->
                         Row(
-                            Modifier.fillMaxWidth().clickable { viewing = post }.padding(horizontal = 14.dp, vertical = 12.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                                .glassSurface(shape = GlassShapeSmall)
+                                .clickable { viewing = post }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.Top,
                         ) {
                             Column(Modifier.weight(1f)) {

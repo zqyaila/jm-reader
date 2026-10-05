@@ -55,15 +55,27 @@ const val GlassShadowAlpha = 0.08f
 const val GlassInnerShadowDp = 4f
 const val GlassInnerShadowAlpha = 0.10f
 
-/** Fog strength per surface kind (see the deviation note above). */
-const val GlassBarFogAlphaDark = 0.78f
-const val GlassBarFogAlphaLight = 0.80f
-const val GlassPanelFogAlphaDark = 0.72f
-const val GlassPanelFogAlphaLight = 0.76f
+/**
+ * Fog strength per surface kind (see the deviation note above).
+ *
+ * The bottom bar is the densest because full-bleed cover art scrolls *underneath* it; panes and
+ * top bars only ever sit over the app canvas, which is itself dark/light enough to carry text, so
+ * they can stay thin and actually look like glass.
+ */
+const val GlassBottomBarFogAlphaDark = 0.78f
+const val GlassBottomBarFogAlphaLight = 0.80f
+const val GlassTopBarFogAlphaDark = 0.52f
+const val GlassTopBarFogAlphaLight = 0.58f
+const val GlassPanelFogAlphaDark = 0.45f
+const val GlassPanelFogAlphaLight = 0.52f
 
 /** Neutral fog bases from the spec (`121212` darkened slightly, see the deviation note). */
 val GlassFogDark = Color(0xFF0A0A0A)
 val GlassFogLight = Color(0xFFFAFAFA)
+
+/** Canvas opacity: low enough that the backdrop colour reaches every screen. */
+const val CanvasAlphaDark = 0.62f
+const val CanvasAlphaLight = 0.72f
 
 /** Specular highlight + rim light. */
 val GlassSpecular = Color(0xFFFFFFFF)

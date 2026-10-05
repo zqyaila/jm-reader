@@ -16,10 +16,9 @@ internal val DarkColors = darkColorScheme(
     onPrimaryContainer = Color.White,
     secondary = BrandOrangeSoft,
     onSecondary = DarkBg,
-    // The page canvas is translucent enough for the backdrop colour to come through (that is what
-    // makes the app read as "liquid glass"), but every surface that carries text has its own scrim
-    // on top of it - see Glass.kt and GlassContrastTest, which check the worst-case composite.
-    background = DarkBg.copy(alpha = 0.78f),
+    // Bring the backdrop up to every screen: text surfaces carry their own fog, so the canvas can
+    // be quite translucent (GlassContrastTest checks canvas text over the brightest blob).
+    background = DarkBg.copy(alpha = CanvasAlphaDark),
     onBackground = TextPrimaryDark,
     surface = DarkSurface.copy(alpha = 0.88f),
     onSurface = TextPrimaryDark,
@@ -35,7 +34,7 @@ internal val LightColors = lightColorScheme(
     onPrimaryContainer = LightBg,
     secondary = BrandOrangeDark,
     onSecondary = Color.White,
-    background = LightBg.copy(alpha = 0.84f),
+    background = LightBg.copy(alpha = CanvasAlphaLight),
     onBackground = TextPrimaryLight,
     surface = LightSurface.copy(alpha = 0.90f),
     onSurface = TextPrimaryLight,
