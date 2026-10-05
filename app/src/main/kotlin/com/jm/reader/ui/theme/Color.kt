@@ -45,12 +45,12 @@ val GlassScrimDark = Color(0xE6141418)
 val GlassScrimLight = Color(0xE6FFFFFF)
 
 /** Fill for bars (top bar / bottom navigation): a little more see-through than a panel. */
-val GlassBarScrimDark = Color(0xD90C0C10)
-val GlassBarScrimLight = Color(0xD9FBFBFD)
+val GlassBarScrimDark = Color(0xE60C0C10)
+val GlassBarScrimLight = Color(0xF2FFFFFF)
 
 /** Hairline highlight that sells the "edge of a pane of glass" look. */
 val GlassBorderDark = Color(0x33FFFFFF)
-val GlassBorderLight = Color(0x1F000000)
+val GlassBorderLight = Color(0x26000000)
 
 /** Soft sheen drawn inside a panel over the scrim. */
 val GlassSheen = Color(0x12FFFFFF)

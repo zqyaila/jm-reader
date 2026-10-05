@@ -157,26 +157,53 @@ fun AppBackdrop(modifier: Modifier = Modifier) {
 }
 
 /**
- * Thin, blurred strip used behind top bars and the navigation bar.
+ * Strip used behind the top bar and the navigation bar.
  *
- * Scrolling content stays faintly visible through the veil (that is the glass effect) while the
- * veil stays opaque enough for icons and labels to keep their contrast - see the ratios asserted
- * in `GlassContrastTest`.
+ * **Never put a blur on this node.** `Modifier.blur` is a graphics layer on the *layout node*, so it
+ * blurs everything the node draws - children included. Applying it here smeared the navigation
+ * icons/labels and the library title/tabs into an unreadable haze (the reason those two bars looked
+ * "invisible" while every colour ratio computed fine). The frosted read comes instead from:
+ *  - a translucent scrim: page content stays faintly visible as it scrolls underneath, and
+ *  - a hairline border + a faint top sheen: the "pane of glass" edge.
+ *
+ * The background gradient and the sheen are drawn as *sibling* layers, so they can be blurred
+ * without touching [content].
  */
 @Composable
 fun GlassBar(
     modifier: Modifier = Modifier,
-    blurRadius: Dp = 20.dp,
     tint: Color? = null,
     content: @Composable () -> Unit,
 ) {
-    Box(
-        modifier
-            .background(backdropBrush())
-            .platformBlur(blurRadius)
-            .background(tint ?: glassBarScrimColor())
-            .border(1.dp, glassBorderColor()),
-    ) {
+    Box(modifier) {
+        // Layer 1: the app gradient, so the bar is not a flat rectangle.
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(backdropBrush()),
+        )
+        // Layer 2: the translucent scrim that keeps text and icons legible.
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(tint ?: glassBarScrimColor()),
+        )
+        // Layer 3: faint top sheen - the glass highlight. Low alpha, and still behind the content.
+        Box(
+            Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(listOf(GlassSheen, Color.Transparent)),
+                ),
+        )
+        // Layer 4: content (NavigationBar / TopAppBar). Drawn after every background layer and
+        // outside any blur, so it always stays sharp.
         content()
+        // Layer 5: hairline edge on top of the content, so the bar reads as a distinct surface.
+        Box(
+            Modifier
+                .matchParentSize()
+                .border(1.dp, glassBorderColor()),
+        )
     }
 }

@@ -1,5 +1,6 @@
 package com.jm.reader.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,6 +14,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemColors
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -87,12 +89,22 @@ fun MainScreen(navController: NavHostController) {
     }
 }
 
-/** Selected-tab pill sits on the blurred bar without painting an opaque strip over it. */
+/**
+ * Selected-tab colours that stay readable on the glass bar in both themes: the light scheme tints
+ * the accent darker (`secondary` = BrandOrangeDark) because plain #FF6F00 only reaches ~2.9:1 on a
+ * white bar, while the dark scheme keeps the brighter brand orange.
+ */
 @Composable
-private fun glassNavColors() = NavigationBarItemDefaults.colors(
-    selectedIconColor = MaterialTheme.colorScheme.primary,
-    selectedTextColor = MaterialTheme.colorScheme.primary,
-    indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f),
-    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-)
+private fun glassNavColors(): NavigationBarItemColors {
+    val dark = isSystemInDarkTheme()
+    val accent = if (dark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+    val label = MaterialTheme.colorScheme.onSurface
+    val idle = MaterialTheme.colorScheme.onSurfaceVariant
+    return NavigationBarItemDefaults.colors(
+        selectedIconColor = accent,
+        selectedTextColor = accent,
+        indicatorColor = accent.copy(alpha = if (dark) 0.22f else 0.16f),
+        unselectedIconColor = idle,
+        unselectedTextColor = idle,
+    )
+}
