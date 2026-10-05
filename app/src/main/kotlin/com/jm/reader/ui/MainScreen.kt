@@ -156,9 +156,12 @@ private fun GlassBottomNav(
                 label = "navIndicator",
             )
 
+            // `Modifier.offset { }` works in **pixels**, so the dp-per-item has to be converted.
+            // (Using `itemWidth.value` here made the pill travel only 1/density of the way, which
+            // is why it appeared not to follow the selection.)
             Box(
                 Modifier
-                    .offset { IntOffset((position * itemWidth.value).roundToInt(), 0) }
+                    .offset { IntOffset((position * itemWidth.toPx()).roundToInt(), 0) }
                     .width(itemWidth)
                     .height(50.dp)
                     .clip(GlassShapeSmall)
