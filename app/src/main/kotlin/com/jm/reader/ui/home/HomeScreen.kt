@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -64,6 +65,7 @@ import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.BottomNavReserve
 import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
@@ -160,6 +162,9 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
                     state = gridState,
+                    // Bottom reserve lets the last row scroll clear of the floating glass nav pill
+                    // (and lets covers slide *under* it, which is what the backdrop blur samples).
+                    contentPadding = PaddingValues(bottom = BottomNavReserve),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {

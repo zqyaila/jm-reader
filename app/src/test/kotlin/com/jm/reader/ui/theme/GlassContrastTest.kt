@@ -1,6 +1,7 @@
 package com.jm.reader.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.max
@@ -8,13 +9,15 @@ import kotlin.math.min
 import kotlin.math.pow
 
 /**
- * Contrast guard for the frosted-glass layer.
+ * Guard for the liquid-glass layer.
  *
- * The first version of the glass UI made icons and text unreadable: the page canvas was only 45%
- * opaque, several screens used a fully transparent `Scaffold`, the panel/bar fills were
- * translucent *white washes* (which brighten a dark theme) and the backdrop blobs were drawn at
- * 45% alpha. This test locks in the fix by asserting WCAG contrast ratios for the real colour
- * pairs the UI uses, including the worst-case backdrop underneath a translucent scrim.
+ * The design follows the **skill-liquid-glass** spec, whose fog is only 15 %. This app scrolls
+ * full-bleed white cover art underneath its glass and Compose has no `vibrancy`, so the fog is
+ * raised - and these tests prove the raised values keep WCAG AA contrast over the *worst possible*
+ * backdrop (pure white and pure black), not just over the app's own canvas.
+ *
+ * They also pin the spec tokens and catch the two regressions this feature already had:
+ * a see-through page canvas, and a fog thin enough to lose the text on it.
  */
 class GlassContrastTest {
 
@@ -45,123 +48,130 @@ class GlassContrastTest {
         )
     }
 
-    /** Darkest / brightest backdrop samples a scrim may sit on. */
-    private val darkBackdropWorst = Color(0xFF1A1412)
-    private val lightBackdropWorst = Color(0xFFFFF3E8)
+    private fun darkFog(forBar: Boolean): Color =
+        GlassFogDark.copy(alpha = if (forBar) GlassBarFogAlphaDark else GlassPanelFogAlphaDark)
 
-    /** Backdrop with the decorative orange blob at full strength (the worst case for contrast). */
-    private val darkBackdropWithBlob: Color =
-        over(BrandOrange.copy(alpha = BackdropBlobAlpha), darkBackdropWorst)
+    private fun lightFog(forBar: Boolean): Color =
+        GlassFogLight.copy(alpha = if (forBar) GlassBarFogAlphaLight else GlassPanelFogAlphaLight)
 
-    // --- assertions ---------------------------------------------------------
+    /** Backdrops a pane can sit on, worst cases first: a white page, a black page, mid grey. */
+    private val worstBackdrops = listOf(
+        Color.White,
+        Color.Black,
+        Color(0xFF808080),
+        Color(0xFF1B1220), // the app's own backdrop gradient
+    )
+
+    // --- spec tokens --------------------------------------------------------
 
     @Test
-    fun `scrims are opaque enough to carry text`() {
-        // These thresholds are the actual fix: a wash thin enough to see the art is a wash thin
-        // enough to lose the text.
-        assertTrue("panel scrim too transparent", GlassScrimDark.alpha >= 0.85f)
-        assertTrue("panel scrim too transparent", GlassScrimLight.alpha >= 0.85f)
-        assertTrue("bar scrim too transparent", GlassBarScrimDark.alpha >= 0.75f)
-        assertTrue("bar scrim too transparent", GlassBarScrimLight.alpha >= 0.75f)
+    fun `glass tokens match the skill spec`() {
+        assertEquals(2f, GlassBlurDp)
+        assertEquals(12f, GlassLensRefractionDp)
+        assertEquals(24f, GlassLensDistortionDp)
+        assertEquals(0.15f, GlassHighlightAlpha)
+        assertEquals(0.08f, GlassShadowAlpha)
+        assertEquals(4f, GlassInnerShadowDp)
+        assertEquals(0.10f, GlassInnerShadowAlpha)
     }
 
     @Test
-    fun `page canvas stays opaque enough to read on`() {
-        // 0.75 is the floor: low enough for the backdrop colour to carry through (the "liquid
-        // glass" look), high enough that body text on the canvas keeps its contrast - see the
-        // ratios asserted below.
-        assertTrue("dark canvas must not be see-through", DarkColors.background.alpha >= 0.75f)
-        assertTrue("light canvas must not be see-through", LightColors.background.alpha >= 0.75f)
-        assertTrue("dark surface must not be see-through", DarkColors.surface.alpha >= 0.82f)
-        assertTrue("light surface must not be see-through", LightColors.surface.alpha >= 0.82f)
+    fun `fog stays thin enough to read the backdrop through`() {
+        // Upper bound: a nearly opaque pane would stop being glass.
+        assertTrue(GlassBarFogAlphaDark < 0.85f)
+        assertTrue(GlassPanelFogAlphaDark < 0.85f)
+        assertTrue(GlassBarFogAlphaLight < 0.85f)
+        assertTrue(GlassPanelFogAlphaLight < 0.85f)
+        // Lower bound: below this the text loses AA over a white backdrop (asserted next).
+        assertTrue(GlassBarFogAlphaDark >= 0.75f)
+        assertTrue(GlassPanelFogAlphaDark >= 0.70f)
+    }
+
+    // --- the actual guarantee ----------------------------------------------
+
+    @Test
+    fun `dark glass text keeps AA over any backdrop`() {
+        for (bg in worstBackdrops) {
+            for (forBar in listOf(true, false)) {
+                val pane = over(darkFog(forBar), bg)
+                assertTrue(
+                    "body text, bar=$forBar, backdrop=$bg: ${ratio(DarkColors.onSurface, pane)}",
+                    ratio(DarkColors.onSurface, pane) >= 4.5,
+                )
+                assertTrue(
+                    "hint text, bar=$forBar, backdrop=$bg: ${ratio(DarkColors.onSurfaceVariant, pane)}",
+                    ratio(DarkColors.onSurfaceVariant, pane) >= 4.5,
+                )
+            }
+        }
     }
 
     @Test
-    fun `dark theme text on glass panels keeps AA contrast`() {
-        val panel = over(GlassScrimDark, darkBackdropWithBlob)
-        assertTrue(
-            "primary text on a dark glass panel: ${ratio(DarkColors.onSurface, panel)}",
-            ratio(DarkColors.onSurface, panel) >= 4.5,
-        )
-        assertTrue(
-            "secondary text on a dark glass panel: ${ratio(DarkColors.onSurfaceVariant, panel)}",
-            ratio(DarkColors.onSurfaceVariant, panel) >= 4.5,
-        )
+    fun `light glass text keeps AA over any backdrop`() {
+        for (bg in worstBackdrops) {
+            for (forBar in listOf(true, false)) {
+                val pane = over(lightFog(forBar), bg)
+                assertTrue(
+                    "body text, bar=$forBar, backdrop=$bg: ${ratio(LightColors.onSurface, pane)}",
+                    ratio(LightColors.onSurface, pane) >= 4.5,
+                )
+                assertTrue(
+                    "hint text, bar=$forBar, backdrop=$bg: ${ratio(LightColors.onSurfaceVariant, pane)}",
+                    ratio(LightColors.onSurfaceVariant, pane) >= 4.5,
+                )
+            }
+        }
     }
 
     @Test
-    fun `dark theme text on glass bars keeps AA contrast`() {
-        val bar = over(GlassBarScrimDark, darkBackdropWithBlob)
+    fun `navigation accents keep AA on their own glass`() {
+        // The selected item is a *solid* accent pill, so its label contrast does not depend on what
+        // the glass sampled. These are the exact pairs MainScreen uses.
         assertTrue(
-            "primary text on the nav bar: ${ratio(DarkColors.onSurface, bar)}",
-            ratio(DarkColors.onSurface, bar) >= 4.5,
+            "dark selected nav (on #121212): ${ratio(BrandOrangeSoft, DarkBg)}",
+            ratio(BrandOrangeSoft, DarkBg) >= 4.5,
         )
         assertTrue(
-            "unselected nav labels: ${ratio(DarkColors.onSurfaceVariant, bar)}",
-            ratio(DarkColors.onSurfaceVariant, bar) >= 4.5,
+            "light selected nav (on white): ${ratio(BrandOrangeDeep, Color.White)}",
+            ratio(BrandOrangeDeep, Color.White) >= 4.5,
         )
-        // Icons only need 3:1 (WCAG non-text contrast).
-        assertTrue(
-            "selected nav icon: ${ratio(DarkColors.primary, bar)}",
-            ratio(DarkColors.primary, bar) >= 3.0,
-        )
+        // Unselected labels sit on the glass itself.
+        for (bg in worstBackdrops) {
+            val darkBar = over(darkFog(true), bg)
+            assertTrue(
+                "dark unselected nav label on $bg: ${ratio(DarkColors.onSurfaceVariant, darkBar)}",
+                ratio(DarkColors.onSurfaceVariant, darkBar) >= 4.5,
+            )
+            val lightBar = over(lightFog(true), bg)
+            assertTrue(
+                "light unselected nav label on $bg: ${ratio(LightColors.onSurfaceVariant, lightBar)}",
+                ratio(LightColors.onSurfaceVariant, lightBar) >= 4.5,
+            )
+        }
     }
 
     @Test
-    fun `light theme text on glass panels keeps AA contrast`() {
-        val panel = over(GlassScrimLight, lightBackdropWorst)
-        assertTrue(
-            "primary text on a light glass panel: ${ratio(LightColors.onSurface, panel)}",
-            ratio(LightColors.onSurface, panel) >= 4.5,
-        )
-        assertTrue(
-            "secondary text on a light glass panel: ${ratio(LightColors.onSurfaceVariant, panel)}",
-            ratio(LightColors.onSurfaceVariant, panel) >= 4.5,
-        )
+    fun `page canvas keeps AA with the backdrop behind it`() {
+        val backdrops = listOf(Color(0xFF1B1220), Color(0xFF0A1418), Color(0xFF7C4DFF))
+        for (bg in backdrops) {
+            val darkCanvas = over(DarkColors.background, bg)
+            assertTrue(
+                "dark canvas body text on $bg: ${ratio(DarkColors.onSurface, darkCanvas)}",
+                ratio(DarkColors.onSurface, darkCanvas) >= 4.5,
+            )
+            val lightCanvas = over(LightColors.background, bg)
+            assertTrue(
+                "light canvas body text on $bg: ${ratio(LightColors.onSurface, lightCanvas)}",
+                ratio(LightColors.onSurface, lightCanvas) >= 4.5,
+            )
+        }
     }
 
     @Test
-    fun `light theme text on glass bars keeps AA contrast`() {
-        val bar = over(GlassBarScrimLight, lightBackdropWorst)
-        assertTrue(
-            "primary text on the light nav bar: ${ratio(LightColors.onSurface, bar)}",
-            ratio(LightColors.onSurface, bar) >= 4.5,
-        )
-        assertTrue(
-            "unselected nav labels: ${ratio(LightColors.onSurfaceVariant, bar)}",
-            ratio(LightColors.onSurfaceVariant, bar) >= 4.5,
-        )
-        // The selected tab uses the deep orange in the light theme; it carries a *label*, so it
-        // has to clear AA rather than just the 3:1 icon threshold.
-        assertTrue(
-            "selected nav label: ${ratio(BrandOrangeDeep, bar)}",
-            ratio(BrandOrangeDeep, bar) >= 4.5,
-        )
-    }
-
-    @Test
-    fun `text on the page canvas keeps AA contrast`() {
-        assertTrue(
-            "body text on the dark canvas: ${ratio(DarkColors.onSurface, DarkColors.background)}",
-            ratio(DarkColors.onSurface, DarkColors.background) >= 4.5,
-        )
-        assertTrue(
-            "secondary text on the dark canvas: ${ratio(DarkColors.onSurfaceVariant, DarkColors.background)}",
-            ratio(DarkColors.onSurfaceVariant, DarkColors.background) >= 4.5,
-        )
-        assertTrue(
-            "body text on the light canvas: ${ratio(LightColors.onSurface, LightColors.background)}",
-            ratio(LightColors.onSurface, LightColors.background) >= 4.5,
-        )
-    }
-
-    @Test
-    fun `the decorative blob stays decorative`() {
-        // A ceiling on the blobs, but the real guarantee is the contrast assertions above: they
-        // composite the blob under each scrim and must keep passing.
-        assertTrue(
-            "backdrop blobs must stay a background effect, not a light source",
-            BackdropBlobAlpha in 0.15f..0.35f,
-        )
+    fun `page canvas is translucent enough for glass to have something to refract`() {
+        assertTrue("dark canvas too opaque", DarkColors.background.alpha <= 0.88f)
+        assertTrue("light canvas too opaque", LightColors.background.alpha <= 0.92f)
+        assertTrue("canvas must still carry text", DarkColors.background.alpha >= 0.70f)
+        assertTrue("backdrop blobs must stay visible", BackdropBlobAlpha in 0.15f..0.45f)
     }
 }

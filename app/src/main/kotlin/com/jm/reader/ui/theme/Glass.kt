@@ -10,131 +10,279 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
- * Frosted-glass ("毛玻璃") helpers.
+ * Liquid glass, implemented after the **skill-liquid-glass** design spec
+ * (https://github.com/JUEMING-006/skill-liquid-glass, built on Kyant0/AndroidLiquidGlass):
  *
- * Design contract - **legibility first**:
- *  - **Page canvas** ([AppBackdrop] + the theme's `background`) is a near-opaque surface, so lists,
- *    grids and body text always sit on a predictable contrast.
- *  - Only **bars** (top bar / bottom navigation) and **panels** are glass, and they are built from
- *    a *scrim*: a near-opaque black veil in the dark theme, a near-opaque white veil in the light
- *    theme. A scrim darkens/lightens what is behind it instead of washing it out, so
- *    `onSurface` / `onSurfaceVariant` keep their contrast.
- *  - A hairline border and a faint sheen supply the "pane of glass" read without adding brightness
- *    behind the text.
- *  - `Modifier.blur` only has an effect on Android 12+ (API 31); below that the scrims alone still
- *    look right.
+ * | token | value |
+ * |---|---|
+ * | blur | 2 dp (low blur keeps the content readable) |
+ * | lens | 12 dp / 24 dp refraction + chromatic aberration |
+ * | fog | neutral, light `FAFAFA` / dark `121212` |
+ * | highlight | 0.15 specular sheen |
+ * | shadow | 0.08 drop shadow |
+ * | innerShadow | 4 dp / 0.1 rim |
  *
- * `GlassContrastTest` asserts the resulting contrast ratios, so the earlier regression (a
- * translucent white wash over a bright gradient, which made icons and text unreadable) fails the
- * build instead of shipping.
+ * The library itself is a Compose Multiplatform artifact published against Kotlin 2.4.10 +
+ * Compose 1.12; this project is on Kotlin 2.2 / Compose 1.8, so instead of upgrading the whole
+ * toolchain the same recipe is built from Compose primitives:
+ *
+ *  1. **Real backdrop sampling** - the page content is recorded once into a [GraphicsLayer]
+ *     ([PageBackdropHost]). A glass node that lives *outside* that recording draws the layer,
+ *     offset by its own position, into a background-only sub-layer and blurs **that** ([sampled]).
+ *     That is genuine "blur what is behind me", without the `Modifier.blur` trap of also blurring
+ *     the node's own content.
+ *  2. **Fog** - the neutral tint from the spec, raised for contrast (see Color.kt).
+ *  3. **Specular highlight** - the diagonal sheen that makes a pane read as glass.
+ *  4. **Rim + shadow** - hairline rim light plus a soft drop shadow for lift.
+ *
+ * Refraction (`lens`) needs an AGSL RuntimeShader, which the library drives through its own
+ * `BackdropEffectScope`; here it is approximated by the rim light plus the 1 px inner shading.
  */
 val GlassShape: Shape = RoundedCornerShape(20.dp)
 val GlassShapeLarge: Shape = RoundedCornerShape(28.dp)
 val GlassShapeSmall: Shape = RoundedCornerShape(14.dp)
 
-/** True when the platform can actually blur. */
+/** True when the platform can blur at all (RenderEffect, API 31+). */
 val supportsBlur: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
-fun Modifier.platformBlur(radius: Dp): Modifier =
+/** Spec: 2 dp, low on purpose. */
+val GlassBlurRadius: Dp = GlassBlurDp.dp
+
+fun Modifier.platformBlur(radius: Dp, unbounded: Boolean = true): Modifier =
     if (supportsBlur && radius > 0.dp) {
-        this.blur(radius, BlurredEdgeTreatment.Unbounded)
+        blur(
+            radius,
+            if (unbounded) BlurredEdgeTreatment.Unbounded else BlurredEdgeTreatment.Rectangle,
+        )
     } else {
         this
     }
 
-/** Root gradient for the current theme. */
+// ---------------------------------------------------------------------------
+// Theme-aware helpers
+// ---------------------------------------------------------------------------
+
 @Composable
 fun backdropBrush(): Brush = if (isSystemInDarkTheme()) BackdropBrush else BackdropBrushLight
 
-/** Panel veil: darkens in the dark theme, lightens in the light theme. */
 @Composable
-fun glassScrimColor(): Color = if (isSystemInDarkTheme()) GlassScrimDark else GlassScrimLight
+fun glassFogColor(forBar: Boolean = false): Color {
+    val dark = isSystemInDarkTheme()
+    val base = if (dark) GlassFogDark else GlassFogLight
+    val alpha = when {
+        dark && forBar -> GlassBarFogAlphaDark
+        dark -> GlassPanelFogAlphaDark
+        forBar -> GlassBarFogAlphaLight
+        else -> GlassPanelFogAlphaLight
+    }
+    return base.copy(alpha = alpha)
+}
 
-/** Bar veil: same idea, slightly more see-through than a panel. */
 @Composable
-fun glassBarScrimColor(): Color = if (isSystemInDarkTheme()) GlassBarScrimDark else GlassBarScrimLight
+fun glassRimBrush(): Brush = if (isSystemInDarkTheme()) {
+    Brush.verticalGradient(listOf(GlassRimTop, GlassRimBottom))
+} else {
+    Brush.verticalGradient(listOf(GlassRimTopLight, GlassRimBottomLight))
+}
 
+// ---------------------------------------------------------------------------
+// Backdrop sampling
+// ---------------------------------------------------------------------------
+
+/**
+ * Background-only layer: draws the page backdrop at this node's position and blurs it. The node's
+ * own content is never inside this layer, so it stays sharp.
+ *
+ * The caller must own a layer that records the page *and must not itself live inside that
+ * recording* - sampling your own recording feeds back on itself (the library warns about the same
+ * hazard for `layerBackdrop`). `MainScreen` is the only user: it records the tab content and puts
+ * the navigation pill outside the recording.
+ */
 @Composable
-fun glassBorderColor(): Color = if (isSystemInDarkTheme()) GlassBorderDark else GlassBorderLight
+private fun Modifier.sampledBackdrop(layer: GraphicsLayer, blurRadius: Dp): Modifier {
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    return this
+        .onGloballyPositioned { offset = it.positionInRoot() }
+        // Clip the blur so the pane's edges do not smear outside its rounded shape.
+        .platformBlur(blurRadius, unbounded = false)
+        .drawBehind {
+            translate(-offset.x, -offset.y) { drawLayer(layer) }
+        }
+}
 
-/** Translucent panel with a hairline highlight - the core glass recipe. */
+// ---------------------------------------------------------------------------
+// Core recipe
+// ---------------------------------------------------------------------------
+
+/**
+ * The glass surface itself: shadow -> [sampled backdrop] -> fog -> specular -> rim.
+ *
+ * @param backdropLayer when non-null the pane samples the live page behind it (use for overlays
+ *        placed outside [PageBackdropHost]); when null it is a plain fog pane (use inside the page).
+ * @param fog overrides the theme fog (used for tinted surfaces such as the home quick links).
+ */
+@Composable
+fun Modifier.liquidGlass(
+    shape: Shape = GlassShape,
+    forBar: Boolean = false,
+    backdropLayer: GraphicsLayer? = null,
+    blurRadius: Dp = GlassBlurRadius,
+    elevation: Dp = 16.dp,
+    fog: Color? = null,
+    borderColor: Color? = null,
+    borderWidth: Dp = 1.dp,
+): Modifier {
+    val fogColor = fog ?: glassFogColor(forBar)
+    val rim = glassRimBrush()
+
+    var base = this
+    if (elevation > 0.dp) {
+        val shadowTint = Color.Black.copy(alpha = GlassShadowAlpha)
+        base = base.shadow(
+            elevation = elevation,
+            shape = shape,
+            clip = false,
+            ambientColor = shadowTint,
+            spotColor = shadowTint,
+        )
+    }
+    base = base.clip(shape)
+
+    base = if (backdropLayer != null) {
+        base
+            .sampledBackdrop(backdropLayer, blurRadius)
+            .drawBehind { drawRect(fogColor) }
+    } else {
+        base.background(fogColor)
+    }
+
+    val rimModifier = if (borderColor != null) {
+        Modifier.border(borderWidth, borderColor, shape)
+    } else {
+        Modifier.border(borderWidth, rim, shape)
+    }
+
+    return base
+        .drawBehind {
+            // Specular highlight: a diagonal sheen, the signature "pane of glass" cue.
+            drawRect(
+                Brush.linearGradient(
+                    colors = listOf(
+                        GlassSpecular.copy(alpha = GlassHighlightAlpha),
+                        GlassSpecular.copy(alpha = GlassHighlightAlpha * 0.25f),
+                        Color.Transparent,
+                    ),
+                    start = Offset.Zero,
+                    end = Offset(size.width * 0.85f, size.height * 1.15f),
+                ),
+            )
+        }
+        // Rim light, standing in for the spec's 4 dp inner shadow.
+        .then(rimModifier)
+}
+
+// ---------------------------------------------------------------------------
+// Public surfaces
+// ---------------------------------------------------------------------------
+
+/** Panel / card. Fog only: it lives inside the page, so it must not sample the page layer. */
 @Composable
 fun Modifier.glassSurface(
     shape: Shape = GlassShape,
     tint: Color? = null,
     borderColor: Color? = null,
     borderWidth: Dp = 1.dp,
-): Modifier {
-    val fill = tint ?: glassScrimColor()
-    val stroke = borderColor ?: glassBorderColor()
-    return this
-        .clip(shape)
-        .background(fill)
-        .border(borderWidth, stroke, shape)
-}
+): Modifier = liquidGlass(
+    shape = shape,
+    elevation = 10.dp,
+    fog = tint,
+    borderColor = borderColor,
+    borderWidth = borderWidth,
+)
 
-/**
- * A glass panel: contrast-safe scrim + hairline border + a faint sheen.
- *
- * [blurRadius] softens the sheen (and is a no-op below API 31). Content is drawn **after** the
- * sheen, so nothing bright ever sits behind text.
- */
+/** Panel container. */
 @Composable
 fun GlassPanel(
     modifier: Modifier = Modifier,
     shape: Shape = GlassShape,
     tint: Color? = null,
-    blurRadius: Dp = 24.dp,
+    blurRadius: Dp = GlassBlurRadius,
     content: @Composable () -> Unit,
 ) {
     Box(
-        modifier
-            .clip(shape)
-            .background(tint ?: glassScrimColor())
-            .border(1.dp, glassBorderColor(), shape),
+        modifier.liquidGlass(
+            shape = shape,
+            blurRadius = blurRadius,
+            fog = tint,
+        ),
     ) {
-        // Decorative sheen only - kept behind the content and very low alpha so it can never
-        // reduce text contrast.
-        Box(
-            Modifier
-                .matchParentSize()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(GlassSheen, Color.Transparent),
-                    ),
-                )
-                .platformBlur(blurRadius),
-        )
         content()
     }
 }
 
 /**
- * Full-screen app background: a calm gradient plus three soft, dim colour blobs.
+ * Bar (top bar / bottom navigation). Full-bleed by default; pass a rounded [shape] plus outer
+ * padding for the floating "pill" look.
  *
- * This layer is what the translucent bars, panels and tiles refract - without visible colour
- * variation behind them, "glass" just looks like a flat strip.
+ * [backdropLayer] is optional on purpose: pass `LocalPageBackdrop.current` when the bar lives
+ * outside [PageBackdropHost] to get the real blurred backdrop behind it.
  */
+@Composable
+fun GlassBar(
+    modifier: Modifier = Modifier,
+    shape: Shape = RectangleShape,
+    tint: Color? = null,
+    backdropLayer: GraphicsLayer? = null,
+    content: @Composable () -> Unit,
+) {
+    Box(modifier) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .liquidGlass(
+                    shape = shape,
+                    forBar = true,
+                    backdropLayer = backdropLayer,
+                    fog = tint,
+                ),
+        )
+        content()
+    }
+}
+
+/** Full-screen app background: gradient plus soft colour blobs for the glass to refract. */
 @Composable
 fun AppBackdrop(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize().background(backdropBrush())) {
         Box(
             Modifier
-                .size(340.dp)
-                .offset(x = (-80).dp, y = (-50).dp)
+                .size(360.dp)
+                .offset(x = (-90).dp, y = (-60).dp)
                 .platformBlur(80.dp)
                 .background(
                     Brush.radialGradient(
@@ -145,8 +293,8 @@ fun AppBackdrop(modifier: Modifier = Modifier) {
         Box(
             Modifier
                 .align(Alignment.BottomEnd)
-                .size(320.dp)
-                .offset(x = 60.dp, y = 90.dp)
+                .size(340.dp)
+                .offset(x = 70.dp, y = 100.dp)
                 .platformBlur(80.dp)
                 .background(
                     Brush.radialGradient(
@@ -157,71 +305,26 @@ fun AppBackdrop(modifier: Modifier = Modifier) {
         Box(
             Modifier
                 .align(Alignment.CenterEnd)
-                .size(260.dp)
-                .offset(x = 120.dp, y = (-40).dp)
+                .size(280.dp)
+                .offset(x = 130.dp, y = (-40).dp)
                 .platformBlur(90.dp)
                 .background(
                     Brush.radialGradient(
-                        listOf(GlassAccentViolet.copy(alpha = BackdropBlobAlpha * 0.8f), Color.Transparent),
+                        listOf(GlassAccentViolet.copy(alpha = BackdropBlobAlpha * 0.85f), Color.Transparent),
                     ),
                 ),
         )
-    }
-}
-
-/**
- * Strip used behind the top bar and the navigation bar.
- *
- * **Never put a blur on this node.** `Modifier.blur` is a graphics layer on the *layout node*, so it
- * blurs everything the node draws - children included. Applying it here smeared the navigation
- * icons/labels and the library title/tabs into an unreadable haze (the reason those two bars looked
- * "invisible" while every colour ratio computed fine). The frosted read comes instead from:
- *  - a translucent scrim: page content stays faintly visible as it scrolls underneath, and
- *  - a sheen plus a hairline border: the "pane of glass" highlight.
- *
- * The gradient and the sheen are drawn as *sibling* layers, so they can be blurred or shaped
- * without ever touching [content].
- *
- * @param shape use a rounded shape (with outer padding) to get the floating "liquid glass" bar;
- *        the default keeps the bar full-bleed.
- */
-@Composable
-fun GlassBar(
-    modifier: Modifier = Modifier,
-    shape: Shape = RectangleShape,
-    tint: Color? = null,
-    content: @Composable () -> Unit,
-) {
-    Box(modifier.clip(shape)) {
-        // Layer 1: the app gradient, so the bar is not a flat rectangle.
         Box(
             Modifier
-                .matchParentSize()
-                .background(backdropBrush()),
-        )
-        // Layer 2: the translucent scrim that keeps text and icons legible.
-        Box(
-            Modifier
-                .matchParentSize()
-                .background(tint ?: glassBarScrimColor()),
-        )
-        // Layer 3: sheen - the glass highlight. Low alpha, still behind the content.
-        Box(
-            Modifier
-                .matchParentSize()
+                .align(Alignment.BottomStart)
+                .size(240.dp)
+                .offset(x = (-60).dp, y = 60.dp)
+                .platformBlur(90.dp)
                 .background(
-                    Brush.verticalGradient(listOf(GlassSheen, Color.Transparent)),
+                    Brush.radialGradient(
+                        listOf(GlassAccentTeal.copy(alpha = BackdropBlobAlpha * 0.7f), Color.Transparent),
+                    ),
                 ),
-        )
-        // Layer 4: content (NavigationBar / TopAppBar). Drawn after every background layer and
-        // outside any blur, so it always stays sharp.
-        content()
-        // Layer 5: hairline edge on top of the content, so the bar reads as a distinct surface.
-        Box(
-            Modifier
-                .matchParentSize()
-                .border(1.dp, glassBorderColor(), shape)
-                .clip(shape),
         )
     }
 }

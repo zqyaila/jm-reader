@@ -4,7 +4,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -52,6 +54,7 @@ import com.jm.reader.data.history.HistoryManager
 import com.jm.reader.data.model.ComicListItem
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.repo.RepoResult
+import com.jm.reader.ui.BottomNavReserve
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
@@ -93,6 +96,9 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
 
     Scaffold(
         modifier = modifier,
+        // The tab host already applied the status-bar inset, so this inner Scaffold must not add
+        // it again.
+        contentWindowInsets = WindowInsets(0),
         // Near-opaque canvas so list rows and labels keep their contrast; the tab header above
         // is the glass surface.
         containerColor = MaterialTheme.colorScheme.background,
@@ -182,6 +188,8 @@ private fun FavoritesList(
                 items = items,
                 repo = repo,
                 onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
+                // Clears the floating glass nav pill.
+                contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = BottomNavReserve),
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -228,7 +236,10 @@ private fun HistoryList(
                     )
                     TextButton(onClick = { confirmClear = true }) { Text(s.historyClear) }
                 }
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = BottomNavReserve),
+                ) {
                     items(entries, key = { it.albumId }) { entry ->
                         HistoryRow(
                             entry = entry,
@@ -343,7 +354,10 @@ private fun DownloadsList(
         if (albums.isEmpty()) {
             EmptyView(s.emptyDownloads, Modifier.fillMaxSize())
         } else {
-            LazyColumn(Modifier.fillMaxSize()) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = BottomNavReserve),
+            ) {
                 items(albums.sortedByDescending { it.timestamp }, key = { it.albumId }) { album ->
                     val prog = downloading[album.albumId]
                     Row(

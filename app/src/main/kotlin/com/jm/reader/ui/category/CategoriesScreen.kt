@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.jm.reader.data.model.Category
 import com.jm.reader.data.repo.RepoResult
+import com.jm.reader.ui.BottomNavReserve
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.components.ErrorView
@@ -56,7 +58,11 @@ fun CategoriesScreen(navController: NavHostController, modifier: Modifier = Modi
         when {
             loading && categories.isEmpty() -> LoadingView()
             error != null && categories.isEmpty() -> ErrorView(error!!, onRetry = { reloadKey++ })
-            else -> LazyColumn(Modifier.fillMaxSize()) {
+            else -> LazyColumn(
+                Modifier.fillMaxSize(),
+                // Bottom reserve so the last row clears the floating glass nav pill.
+                contentPadding = PaddingValues(bottom = BottomNavReserve),
+            ) {
                 item {
                     Text(
                         s.categories,

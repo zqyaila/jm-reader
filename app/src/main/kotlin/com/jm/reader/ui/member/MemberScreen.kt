@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.jm.reader.data.model.Member
 import com.jm.reader.data.repo.RepoResult
+import com.jm.reader.ui.BottomNavReserve
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalLanguageManager
 import com.jm.reader.ui.LocalRepository
@@ -58,7 +61,13 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
     // Reads the observable session state so the profile appears as soon as login succeeds.
     val loggedIn by session.loggedInFlow.collectAsState()
 
-    Column(modifier.fillMaxSize()) {
+    Column(
+        modifier
+            .fillMaxSize()
+            // Scrollable with a bottom reserve so the last row clears the floating glass nav pill.
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = BottomNavReserve),
+    ) {
         Text(s.member, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
 
         val member = if (loggedIn) repo.member else null

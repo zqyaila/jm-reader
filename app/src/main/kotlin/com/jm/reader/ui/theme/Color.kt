@@ -18,30 +18,64 @@ val LightSurface = Color(0xFFFFFFFF)
 val LightSurfaceVariant = Color(0xFFEDEDED)
 
 val TextPrimaryDark = Color(0xFFEDEDED)
-val TextSecondaryDark = Color(0xFFB0B0B0)
+
+/**
+ * Hint / secondary text is a step brighter than a typical dark theme: it has to stay readable on
+ * glass that sits over full-bleed white cover art (see GlassContrastTest).
+ */
+val TextSecondaryDark = Color(0xFFC4C4C4)
 val TextPrimaryLight = Color(0xFF1A1A1A)
-val TextSecondaryLight = Color(0xFF666666)
+val TextSecondaryLight = Color(0xFF4A4A4A)
 
 val AdFreeAccent = Color(0xFF4CAF50)
 
 // ---------------------------------------------------------------------------
-// Frosted glass ("毛玻璃") palette
+// Liquid glass - tokens follow the design spec of the "skill-liquid-glass" skill
+// (https://github.com/JUEMING-006/skill-liquid-glass, built on Kyant0/AndroidLiquidGlass):
 //
-// Legibility rule for this file: glass fills must be *scrims*, not washes.
-//  - In the dark theme a panel is a near-opaque BLACK scrim (it darkens what is behind it, so
-//    light text keeps its contrast).
-//  - In the light theme it is a near-opaque WHITE scrim (it lightens, so dark text stays dark).
+//   blur        2dp            low blur keeps the underlying content readable
+//   lens        12dp / 24dp    refraction + chromatic aberration (approximated, see Glass.kt)
+//   base fog    15 % neutral   (light FAFAFA / dark 121212)
+//   highlight   0.15           specular sheen
+//   shadow      0.08           drop shadow
+//   innerShadow 4dp / 0.1      rim shading
 //
-// The first version of this feature did the opposite (a translucent white wash over a bright
-// gradient with an also-translucent page background), which is exactly why icons and text became
-// unreadable. `GlassContrastTest` pins the ratios down.
+// Deliberate deviation: that 15 % fog assumes the library's full backdrop + vibrancy pipeline.
+// This app scrolls full-bleed white cover art under its bars and Compose has no `vibrancy`, so the
+// fog is raised until text keeps WCAG AA over *any* backdrop - GlassContrastTest composites the
+// fog over pure white and pure black to prove it.
 // ---------------------------------------------------------------------------
 
-/** Second accent used by the backdrop blobs so the glass has some colour to refract. */
-val GlassAccentBlue = Color(0xFF2F80ED)
+/** Spec tokens. */
+const val GlassBlurDp = 2f
+const val GlassLensRefractionDp = 12f
+const val GlassLensDistortionDp = 24f
+const val GlassHighlightAlpha = 0.15f
+const val GlassShadowAlpha = 0.08f
+const val GlassInnerShadowDp = 4f
+const val GlassInnerShadowAlpha = 0.10f
 
-/** Third blob colour - gives the backdrop a slow, "liquid" colour drift. */
+/** Fog strength per surface kind (see the deviation note above). */
+const val GlassBarFogAlphaDark = 0.78f
+const val GlassBarFogAlphaLight = 0.80f
+const val GlassPanelFogAlphaDark = 0.72f
+const val GlassPanelFogAlphaLight = 0.76f
+
+/** Neutral fog bases from the spec (`121212` darkened slightly, see the deviation note). */
+val GlassFogDark = Color(0xFF0A0A0A)
+val GlassFogLight = Color(0xFFFAFAFA)
+
+/** Specular highlight + rim light. */
+val GlassSpecular = Color(0xFFFFFFFF)
+val GlassRimTop = Color(0x59FFFFFF)
+val GlassRimBottom = Color(0x0DFFFFFF)
+val GlassRimTopLight = Color(0x99FFFFFF)
+val GlassRimBottomLight = Color(0x14000000)
+
+/** Blob colours the glass refracts. */
+val GlassAccentBlue = Color(0xFF2F80ED)
 val GlassAccentViolet = Color(0xFF7C4DFF)
+val GlassAccentTeal = Color(0xFF00BFA5)
 
 /**
  * Accent used for *text and icons* on light-theme glass. The brand orange (#FF6F00) only reaches
@@ -49,43 +83,27 @@ val GlassAccentViolet = Color(0xFF7C4DFF)
  */
 val BrandOrangeDeep = Color(0xFFBF360C)
 
-/** Fill for panels / cards sitting directly on the page. */
-val GlassScrimDark = Color(0xD9141418)
-val GlassScrimLight = Color(0xE0FFFFFF)
-
-/** Fill for bars (top bar / bottom navigation): a little more see-through than a panel. */
-val GlassBarScrimDark = Color(0xCC0C0C10)
-val GlassBarScrimLight = Color(0xE6FFFFFF)
-
-/** Hairline highlight that sells the "edge of a pane of glass" look. */
-val GlassBorderDark = Color(0x3DFFFFFF)
-val GlassBorderLight = Color(0x26000000)
-
-/** Soft sheen drawn inside a panel / bar over the scrim. */
-val GlassSheen = Color(0x1FFFFFFF)
-
 /**
- * Backdrop blob strength. Kept moderate: the blobs are what makes the translucent surfaces read as
- * glass, but they must not become a light source behind text (the canvas and every text surface
- * have their own scrim, and `GlassContrastTest` checks the worst-case composite).
+ * Backdrop blob strength. These blobs are what the glass refracts; without colour variation behind
+ * a pane, "glass" reads as a flat strip.
  */
-const val BackdropBlobAlpha = 0.30f
+const val BackdropBlobAlpha = 0.34f
 
 /** Root gradient behind everything. */
 val BackdropBrush: Brush = Brush.linearGradient(
     listOf(
-        Color(0xFF101218),
-        Color(0xFF1A1412),
-        Color(0xFF0D1014),
+        Color(0xFF0B0D16),
+        Color(0xFF1B1220),
+        Color(0xFF0A1418),
     ),
 )
 
 /** Light-theme root gradient. */
 val BackdropBrushLight: Brush = Brush.linearGradient(
     listOf(
-        Color(0xFFF7F8FC),
-        Color(0xFFFFF3E8),
-        Color(0xFFF1F3F8),
+        Color(0xFFF2F4FF),
+        Color(0xFFFFF0E2),
+        Color(0xFFEFF6F5),
     ),
 )
 
