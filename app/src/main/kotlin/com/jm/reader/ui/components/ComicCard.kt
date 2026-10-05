@@ -25,6 +25,8 @@ import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
 import com.jm.reader.data.model.ComicListItem
 import com.jm.reader.data.repo.AppRepository
+import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.glassSurface
 
 @Composable
 fun ComicCard(
@@ -78,24 +80,33 @@ fun ComicCard(
                 )
             }
         }
-        Text(
-            text = item.name,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp),
-        )
-        if (showAuthor) {
-            item.author?.takeIf { it.isNotBlank() }?.let { author ->
-                Text(
-                    text = author,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 1.dp, start = 2.dp, end = 2.dp),
-                )
+        // Caption on its own glass plate: the canvas is deliberately translucent, so grid text
+        // must not sit straight on the gradient.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp)
+                .glassSurface(shape = GlassShapeSmall)
+                .padding(horizontal = 7.dp, vertical = 5.dp),
+        ) {
+            Text(
+                text = item.name,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (showAuthor) {
+                item.author?.takeIf { it.isNotBlank() }?.let { author ->
+                    Text(
+                        text = author,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 1.dp),
+                    )
+                }
             }
         }
     }

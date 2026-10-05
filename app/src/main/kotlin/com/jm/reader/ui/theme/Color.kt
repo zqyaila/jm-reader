@@ -40,26 +40,36 @@ val AdFreeAccent = Color(0xFF4CAF50)
 /** Second accent used by the backdrop blobs so the glass has some colour to refract. */
 val GlassAccentBlue = Color(0xFF2F80ED)
 
-/** Fill for panels / cards sitting directly on the page. */
-val GlassScrimDark = Color(0xE6141418)
-val GlassScrimLight = Color(0xE6FFFFFF)
-
-/** Fill for bars (top bar / bottom navigation): a little more see-through than a panel. */
-val GlassBarScrimDark = Color(0xE60C0C10)
-val GlassBarScrimLight = Color(0xF2FFFFFF)
-
-/** Hairline highlight that sells the "edge of a pane of glass" look. */
-val GlassBorderDark = Color(0x33FFFFFF)
-val GlassBorderLight = Color(0x26000000)
-
-/** Soft sheen drawn inside a panel over the scrim. */
-val GlassSheen = Color(0x12FFFFFF)
+/** Third blob colour - gives the backdrop a slow, "liquid" colour drift. */
+val GlassAccentViolet = Color(0xFF7C4DFF)
 
 /**
- * Backdrop blob strength. Kept low on purpose: the blobs are decoration, and anything brighter
- * bleeds through the translucent bars and washes out the text on top of them.
+ * Accent used for *text and icons* on light-theme glass. The brand orange (#FF6F00) only reaches
+ * ~2.9:1 on a white bar, which is fine for a large filled button but not for a nav label.
  */
-const val BackdropBlobAlpha = 0.16f
+val BrandOrangeDeep = Color(0xFFBF360C)
+
+/** Fill for panels / cards sitting directly on the page. */
+val GlassScrimDark = Color(0xD9141418)
+val GlassScrimLight = Color(0xE0FFFFFF)
+
+/** Fill for bars (top bar / bottom navigation): a little more see-through than a panel. */
+val GlassBarScrimDark = Color(0xCC0C0C10)
+val GlassBarScrimLight = Color(0xE6FFFFFF)
+
+/** Hairline highlight that sells the "edge of a pane of glass" look. */
+val GlassBorderDark = Color(0x3DFFFFFF)
+val GlassBorderLight = Color(0x26000000)
+
+/** Soft sheen drawn inside a panel / bar over the scrim. */
+val GlassSheen = Color(0x1FFFFFFF)
+
+/**
+ * Backdrop blob strength. Kept moderate: the blobs are what makes the translucent surfaces read as
+ * glass, but they must not become a light source behind text (the canvas and every text surface
+ * have their own scrim, and `GlassContrastTest` checks the worst-case composite).
+ */
+const val BackdropBlobAlpha = 0.30f
 
 /** Root gradient behind everything. */
 val BackdropBrush: Brush = Brush.linearGradient(

@@ -66,11 +66,14 @@ class GlassContrastTest {
     }
 
     @Test
-    fun `page canvas stays near opaque`() {
-        assertTrue("dark canvas must not be see-through", DarkColors.background.alpha >= 0.85f)
-        assertTrue("light canvas must not be see-through", LightColors.background.alpha >= 0.85f)
-        assertTrue("dark surface must not be see-through", DarkColors.surface.alpha >= 0.85f)
-        assertTrue("light surface must not be see-through", LightColors.surface.alpha >= 0.85f)
+    fun `page canvas stays opaque enough to read on`() {
+        // 0.75 is the floor: low enough for the backdrop colour to carry through (the "liquid
+        // glass" look), high enough that body text on the canvas keeps its contrast - see the
+        // ratios asserted below.
+        assertTrue("dark canvas must not be see-through", DarkColors.background.alpha >= 0.75f)
+        assertTrue("light canvas must not be see-through", LightColors.background.alpha >= 0.75f)
+        assertTrue("dark surface must not be see-through", DarkColors.surface.alpha >= 0.82f)
+        assertTrue("light surface must not be see-through", LightColors.surface.alpha >= 0.82f)
     }
 
     @Test
@@ -128,6 +131,12 @@ class GlassContrastTest {
             "unselected nav labels: ${ratio(LightColors.onSurfaceVariant, bar)}",
             ratio(LightColors.onSurfaceVariant, bar) >= 4.5,
         )
+        // The selected tab uses the deep orange in the light theme; it carries a *label*, so it
+        // has to clear AA rather than just the 3:1 icon threshold.
+        assertTrue(
+            "selected nav label: ${ratio(BrandOrangeDeep, bar)}",
+            ratio(BrandOrangeDeep, bar) >= 4.5,
+        )
     }
 
     @Test
@@ -147,7 +156,12 @@ class GlassContrastTest {
     }
 
     @Test
-    fun `the decorative blob stays dim`() {
-        assertTrue("backdrop blobs must stay decoration, not light source", BackdropBlobAlpha <= 0.25f)
+    fun `the decorative blob stays decorative`() {
+        // A ceiling on the blobs, but the real guarantee is the contrast assertions above: they
+        // composite the blob under each scrim and must keep passing.
+        assertTrue(
+            "backdrop blobs must stay a background effect, not a light source",
+            BackdropBlobAlpha in 0.15f..0.35f,
+        )
     }
 }

@@ -17,6 +17,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -122,19 +123,19 @@ fun GlassPanel(
 }
 
 /**
- * Full-screen app background: a calm gradient plus two soft, dim colour blobs.
+ * Full-screen app background: a calm gradient plus three soft, dim colour blobs.
  *
- * The blobs are deliberately weak ([BackdropBlobAlpha]); they used to be bright enough to wash out
- * anything drawn on a translucent surface.
+ * This layer is what the translucent bars, panels and tiles refract - without visible colour
+ * variation behind them, "glass" just looks like a flat strip.
  */
 @Composable
 fun AppBackdrop(modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize().background(backdropBrush())) {
         Box(
             Modifier
-                .size(320.dp)
-                .offset(x = (-70).dp, y = (-40).dp)
-                .platformBlur(90.dp)
+                .size(340.dp)
+                .offset(x = (-80).dp, y = (-50).dp)
+                .platformBlur(80.dp)
                 .background(
                     Brush.radialGradient(
                         listOf(BrandOrange.copy(alpha = BackdropBlobAlpha), Color.Transparent),
@@ -144,12 +145,24 @@ fun AppBackdrop(modifier: Modifier = Modifier) {
         Box(
             Modifier
                 .align(Alignment.BottomEnd)
-                .size(300.dp)
+                .size(320.dp)
                 .offset(x = 60.dp, y = 90.dp)
-                .platformBlur(90.dp)
+                .platformBlur(80.dp)
                 .background(
                     Brush.radialGradient(
                         listOf(GlassAccentBlue.copy(alpha = BackdropBlobAlpha), Color.Transparent),
+                    ),
+                ),
+        )
+        Box(
+            Modifier
+                .align(Alignment.CenterEnd)
+                .size(260.dp)
+                .offset(x = 120.dp, y = (-40).dp)
+                .platformBlur(90.dp)
+                .background(
+                    Brush.radialGradient(
+                        listOf(GlassAccentViolet.copy(alpha = BackdropBlobAlpha * 0.8f), Color.Transparent),
                     ),
                 ),
         )
@@ -164,18 +177,22 @@ fun AppBackdrop(modifier: Modifier = Modifier) {
  * icons/labels and the library title/tabs into an unreadable haze (the reason those two bars looked
  * "invisible" while every colour ratio computed fine). The frosted read comes instead from:
  *  - a translucent scrim: page content stays faintly visible as it scrolls underneath, and
- *  - a hairline border + a faint top sheen: the "pane of glass" edge.
+ *  - a sheen plus a hairline border: the "pane of glass" highlight.
  *
- * The background gradient and the sheen are drawn as *sibling* layers, so they can be blurred
- * without touching [content].
+ * The gradient and the sheen are drawn as *sibling* layers, so they can be blurred or shaped
+ * without ever touching [content].
+ *
+ * @param shape use a rounded shape (with outer padding) to get the floating "liquid glass" bar;
+ *        the default keeps the bar full-bleed.
  */
 @Composable
 fun GlassBar(
     modifier: Modifier = Modifier,
+    shape: Shape = RectangleShape,
     tint: Color? = null,
     content: @Composable () -> Unit,
 ) {
-    Box(modifier) {
+    Box(modifier.clip(shape)) {
         // Layer 1: the app gradient, so the bar is not a flat rectangle.
         Box(
             Modifier
@@ -188,7 +205,7 @@ fun GlassBar(
                 .matchParentSize()
                 .background(tint ?: glassBarScrimColor()),
         )
-        // Layer 3: faint top sheen - the glass highlight. Low alpha, and still behind the content.
+        // Layer 3: sheen - the glass highlight. Low alpha, still behind the content.
         Box(
             Modifier
                 .matchParentSize()
@@ -203,7 +220,8 @@ fun GlassBar(
         Box(
             Modifier
                 .matchParentSize()
-                .border(1.dp, glassBorderColor()),
+                .border(1.dp, glassBorderColor(), shape)
+                .clip(shape),
         )
     }
 }

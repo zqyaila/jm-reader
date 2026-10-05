@@ -16,13 +16,14 @@ internal val DarkColors = darkColorScheme(
     onPrimaryContainer = Color.White,
     secondary = BrandOrangeSoft,
     onSecondary = DarkBg,
-    // The page canvas stays almost opaque: lists, grids and body text must never sit directly on
-    // the gradient. The "glass" look lives in the bars and panels (see Glass.kt), not here.
-    background = DarkBg.copy(alpha = 0.92f),
+    // The page canvas is translucent enough for the backdrop colour to come through (that is what
+    // makes the app read as "liquid glass"), but every surface that carries text has its own scrim
+    // on top of it - see Glass.kt and GlassContrastTest, which check the worst-case composite.
+    background = DarkBg.copy(alpha = 0.78f),
     onBackground = TextPrimaryDark,
-    surface = DarkSurface.copy(alpha = 0.95f),
+    surface = DarkSurface.copy(alpha = 0.88f),
     onSurface = TextPrimaryDark,
-    surfaceVariant = DarkSurfaceVariant.copy(alpha = 0.93f),
+    surfaceVariant = DarkSurfaceVariant.copy(alpha = 0.86f),
     onSurfaceVariant = TextSecondaryDark,
     outline = DarkOutline,
 )
@@ -34,11 +35,11 @@ internal val LightColors = lightColorScheme(
     onPrimaryContainer = LightBg,
     secondary = BrandOrangeDark,
     onSecondary = Color.White,
-    background = LightBg.copy(alpha = 0.94f),
+    background = LightBg.copy(alpha = 0.84f),
     onBackground = TextPrimaryLight,
-    surface = LightSurface.copy(alpha = 0.96f),
+    surface = LightSurface.copy(alpha = 0.90f),
     onSurface = TextPrimaryLight,
-    surfaceVariant = LightSurfaceVariant.copy(alpha = 0.94f),
+    surfaceVariant = LightSurfaceVariant.copy(alpha = 0.88f),
     onSurfaceVariant = TextSecondaryLight,
 )
 

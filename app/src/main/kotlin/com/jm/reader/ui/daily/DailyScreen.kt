@@ -5,15 +5,18 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material3.Button
@@ -21,7 +24,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -42,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.jm.reader.data.model.ComicListItem
 import com.jm.reader.data.model.DayCell
-import com.jm.reader.data.model.bool
 import com.jm.reader.data.model.parseDailyRecord
 import com.jm.reader.data.model.str
 import com.jm.reader.data.repo.RepoResult
@@ -50,7 +51,7 @@ import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.components.AppTopBar
-import com.jm.reader.ui.components.ComicGrid
+import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
@@ -155,56 +156,69 @@ fun DailyScreen(navController: NavHostController) {
                 !loggedIn -> SignInRequired(onLogin = { navController.navigate(Routes.login()) })
                 loading -> LoadingView()
                 error != null -> ErrorView(error!!, onRetry = { scope.launch { load() } })
-                else -> Column(
-                    Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState()),
+                // A single lazily-scrolled grid owns the scrolling. The card, the calendar and the
+                // "today's works" list are all items of *this* grid - never a LazyVerticalGrid
+                // nested in a Column(verticalScroll), which is what used to crash with
+                // "Vertically scrollable component was measured with an infinity maximum height".
+                else -> LazyVerticalGrid(
+                    columns = GridCells.Fixed(3),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    DailyCard(
-                        state = state,
-                        signing = signing,
-                        s = s,
-                        onSignIn = {
-                            val id = uid() ?: return@DailyCard
-                            if (state.dailyId.isBlank()) return@DailyCard
-                            scope.launch {
-                                signing = true
-                                when (val r = repo.dailyCheck(id, state.dailyId)) {
-                                    is RepoResult.Ok -> {
-                                        val message = when {
-                                            r.data.alreadyCheckedIn -> s.alreadySignedToday
-                                            r.data.message?.isNotBlank() == true -> r.data.message!!
-                                            else -> s.signInSuccessMsg
+                    item(span = { GridItemSpan(3) }, key = "check-in") {
+                        DailyCard(
+                            state = state,
+                            signing = signing,
+                            s = s,
+                            onSignIn = {
+                                val id = uid() ?: return@DailyCard
+                                if (state.dailyId.isBlank()) return@DailyCard
+                                scope.launch {
+                                    signing = true
+                                    when (val r = repo.dailyCheck(id, state.dailyId)) {
+                                        is RepoResult.Ok -> {
+                                            val message = when {
+                                                r.data.alreadyCheckedIn -> s.alreadySignedToday
+                                                r.data.message?.isNotBlank() == true -> r.data.message!!
+                                                else -> s.signInSuccessMsg
+                                            }
+                                            snackbar.showSnackbar(message)
+                                            load()
                                         }
-                                        snackbar.showSnackbar(message)
-                                        load()
+                                        is RepoResult.Err -> snackbar.showSnackbar(r.message)
                                     }
-                                    is RepoResult.Err -> snackbar.showSnackbar(r.message)
+                                    signing = false
                                 }
-                                signing = false
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                     if (state.items.isEmpty()) {
-                        Text(
-                            s.todayNoWork,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(16.dp),
-                        )
+                        item(span = { GridItemSpan(3) }, key = "empty") {
+                            Text(
+                                s.todayNoWork,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(16.dp),
+                            )
+                        }
                     } else {
-                        Text(
-                            s.latest,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 14.dp, top = 4.dp, bottom = 2.dp),
-                        )
-                        ComicGrid(
-                            items = state.items,
-                            repo = repo,
-                            onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
+                        item(span = { GridItemSpan(3) }, key = "title") {
+                            Text(
+                                s.latest,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(start = 6.dp, top = 4.dp, bottom = 2.dp),
+                            )
+                        }
+                        items(state.items, key = { it.id }) { item ->
+                            ComicCard(
+                                item = item,
+                                repo = repo,
+                                onClick = { navController.navigate(Routes.comicDetail(item.id)) },
+                            )
+                        }
                     }
                 }
             }
@@ -239,7 +253,8 @@ private fun DailyCard(
     onSignIn: () -> Unit,
 ) {
     GlassPanel(
-        modifier = Modifier.fillMaxWidth().padding(12.dp),
+        // Inside a full-span grid item with 8dp content padding, so only a small inset is needed.
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp),
         shape = GlassShape,
         blurRadius = 28.dp,
     ) {

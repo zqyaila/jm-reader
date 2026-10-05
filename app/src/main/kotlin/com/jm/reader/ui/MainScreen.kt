@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -31,7 +32,9 @@ import com.jm.reader.ui.category.CategoriesScreen
 import com.jm.reader.ui.home.HomeScreen
 import com.jm.reader.ui.library.LibraryScreen
 import com.jm.reader.ui.member.MemberScreen
+import com.jm.reader.ui.theme.BrandOrangeDeep
 import com.jm.reader.ui.theme.GlassBar
+import com.jm.reader.ui.theme.GlassShape
 
 @Composable
 fun MainScreen(navController: NavHostController) {
@@ -39,12 +42,23 @@ fun MainScreen(navController: NavHostController) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
 
     Scaffold(
-        // The tab canvas is the (near-opaque) theme background: content must not sit on the
-        // gradient. Only the bottom bar below is glass.
+        // Translucent canvas so the backdrop colour carries through; the tab content still gets its
+        // own scrims (cards, rows), and the bar below is the clearest glass surface.
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            GlassBar(Modifier.fillMaxWidth()) {
-                NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
+            // Floating, rounded, translucent: the page keeps showing around and behind the bar,
+            // which is what makes it read as liquid glass rather than a solid strip.
+            GlassBar(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                shape = GlassShape,
+            ) {
+                NavigationBar(
+                    containerColor = Color.Transparent,
+                    tonalElevation = 0.dp,
+                    modifier = Modifier.clip(GlassShape),
+                ) {
                     NavigationBarItem(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
@@ -90,15 +104,14 @@ fun MainScreen(navController: NavHostController) {
 }
 
 /**
- * Selected-tab colours that stay readable on the glass bar in both themes: the light scheme tints
- * the accent darker (`secondary` = BrandOrangeDark) because plain #FF6F00 only reaches ~2.9:1 on a
- * white bar, while the dark scheme keeps the brighter brand orange.
+ * Selected-tab colours that stay readable on the glass bar in both themes. The light scheme uses
+ * the deep orange for the accent: the brand orange (#FF6F00) only reaches ~2.9:1 on a white bar,
+ * which is fine for a large filled button but not for a nav label.
  */
 @Composable
 private fun glassNavColors(): NavigationBarItemColors {
     val dark = isSystemInDarkTheme()
-    val accent = if (dark) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-    val label = MaterialTheme.colorScheme.onSurface
+    val accent = if (dark) MaterialTheme.colorScheme.primary else BrandOrangeDeep
     val idle = MaterialTheme.colorScheme.onSurfaceVariant
     return NavigationBarItemDefaults.colors(
         selectedIconColor = accent,
