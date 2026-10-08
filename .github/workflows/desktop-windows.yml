@@ -25,6 +25,15 @@ jobs:
     name: Build Windows installer
     runs-on: windows-latest
 
+    # jpackage shells out to a *separate* JVM, so it does not inherit the -Dfile.encoding=UTF-8
+    # that gradle.properties sets for Gradle itself - it picks up the runner's ANSI code page
+    # (windows-1252) instead. The installer strings in desktop/build.gradle.kts are non-ASCII and
+    # jpackage feeds them straight into the WiX sources it generates, so a mismatch there does not
+    # surface as an encoding error; it surfaces much later as a candle/light failure. Pinning the
+    # encoding for every JVM in the job removes the variable rather than working around it.
+    env:
+      JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -38,20 +47,47 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      # jpackage shells out to WiX (candle.exe / light.exe) for the .msi and .exe targets.
-      # The runner image normally already has WiX 3.x; this only installs it when missing, so the
-      # job does not break if the image ever drops it.
+      # jpackage shells out to WiX for BOTH the .msi and the .exe; the linker (light.exe) is what
+      # fails when the toolchain is wrong, and Gradle only reports "External tool execution
+      # failed ... Exit code: 1", which names the tool but not the reason. So require *both*
+      # executables (a half-present WiX is a real failure mode) and install 3.x when either is
+      # missing - jpackage cannot use WiX 4/5, which replaced these two with a single wix.exe.
       - name: Ensure WiX Toolset
         shell: pwsh
         run: |
-          $candle = Get-Command candle.exe -ErrorAction SilentlyContinue
-          if ($candle) {
-            Write-Host "WiX already available: $($candle.Source)"
+          $missing = @()
+          foreach ($tool in 'candle.exe', 'light.exe') {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { $missing += $tool }
+          }
+          if ($missing.Count -eq 0) {
+            Write-Host "WiX already on PATH (candle.exe + light.exe)"
           } else {
-            Write-Host "WiX not found - installing via Chocolatey"
-            choco install wixtoolset --no-progress -y
+            Write-Host "Missing WiX tools: $($missing -join ', ') - installing WiX 3.14 via Chocolatey"
+            choco install wixtoolset --version 3.14.1 --no-progress -y
             "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
+
+      # Records what the linker will actually use. An image that ships a modern WiX *and* a stale
+      # 3.x directory on PATH produces a toolchain that half-works, and this is the only place the
+      # versions are visible when that happens.
+      - name: Report toolchain
+        shell: pwsh
+        run: |
+          foreach ($tool in 'candle.exe', 'light.exe') {
+            $cmd = Get-Command $tool -ErrorAction SilentlyContinue
+            if ($cmd) {
+              Write-Host "$tool -> $($cmd.Source)"
+              # WiX prints its version as the first line of its usage text.
+              & $cmd.Source '-?' 2>&1 | Select-Object -First 3 | ForEach-Object { Write-Host "    $_" }
+            } else {
+              Write-Host "::warning::$tool is not on PATH"
+            }
+          }
+          Write-Host "JAVA_HOME = $env:JAVA_HOME"
+          Write-Host "JAVA_TOOL_OPTIONS = $env:JAVA_TOOL_OPTIONS"
+          & "$env:JAVA_HOME\bin\jpackage.exe" --version 2>&1 | ForEach-Object { Write-Host "jpackage $_" }
+          # The version probes above exit non-zero by design; this step only reports.
+          exit 0
 
       # Pure-logic tests: JM id parsing, de-scramble strip geometry, version comparison, HTML
       # stripping, the crypto round trip and the three-language string table. No network needed.
@@ -59,14 +95,85 @@ jobs:
         run: .\gradlew.bat --no-daemon --stacktrace :desktop:test
 
       - name: Package MSI and EXE
-        run: .\gradlew.bat --no-daemon --stacktrace :desktop:packageMsi :desktop:packageExe
+        shell: pwsh
+        run: |
+          # Tee the output so the diagnostics step below can quote its tail, then re-raise the real
+          # exit code: a pipeline would otherwise mask it, and a silently green packaging step is
+          # worse than a red one.
+          .\gradlew.bat --no-daemon --stacktrace :desktop:packageMsi :desktop:packageExe 2>&1 |
+            Tee-Object -FilePath packaging.log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            Write-Host "gradlew exited with $code"
+            exit $code
+          }
+
+          # Belt and braces: a "successful" packaging run that produced no installer is a failure.
+          $built = Get-ChildItem -Path desktop\build\compose\binaries -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.msi', '.exe' }
+          if (-not $built) {
+            Write-Host "::error::gradle reported success but no .msi/.exe exists under desktop\build\compose\binaries"
+            exit 1
+          }
+          $built | Select-Object Name, Length | Out-String | Write-Host
+
+      # Gradle never explains a jpackage failure: the whole message is
+      #   "External tool execution failed ... Exit code: 1"
+      # pointing at log files that live in the build directory. This step reads them, prints them,
+      # and re-emits the tail as a workflow annotation - so the real cause lands in the run summary
+      # (and the Checks API) instead of staying buried in a log that requires a signed-in session.
+      - name: Packaging diagnostics
+        if: failure()
+        shell: pwsh
+        run: |
+          $lines = New-Object System.Collections.Generic.List[string]
+
+          # Tail of the Gradle output: the "What went wrong" block, which names the failing task,
+          # the jpackage command line and the paths of the logs jpackage wrote.
+          if (Test-Path packaging.log) {
+            $lines.Add('===== tail of packaging.log =====')
+            Get-Content packaging.log -Tail 120 | ForEach-Object { $lines.Add([string]$_) }
+          }
+
+          # jpackage's own stdout/stderr plus the generated WiX source, and the exact argument file
+          # the plugin passed (@...\tmp\packageMsi.args.txt). Between them these say which tool
+          # failed and why.
+          Get-ChildItem -Path desktop\build\compose -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.txt', '.log', '.wxs' } |
+            ForEach-Object {
+              $lines.Add("===== $($_.FullName) =====")
+              Get-Content -LiteralPath $_.FullName -TotalCount 300 -ErrorAction SilentlyContinue |
+                ForEach-Object { $lines.Add([string]$_) }
+            }
+
+          if ($lines.Count -eq 0) { $lines.Add('no packaging logs found under desktop\build\compose') }
+          $lines | ForEach-Object { Write-Host $_ }
+
+          # Annotations are size limited; keep the tail, which is where the error is.
+          $body = ($lines -join "`n")
+          if ($body.Length -gt 6000) { $body = $body.Substring($body.Length - 6000) }
+          $body = $body.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+          Write-Host "::error title=jpackage failure detail::$body"
+
+      - name: Upload packaging logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jm-reader-packaging-logs
+          path: |
+            packaging.log
+            desktop/build/compose/logs/**
+            desktop/build/compose/tmp/**
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Collect installers
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           $root = "desktop\build\compose\binaries\main"
-          Get-ChildItem -Path $root -Recurse -Include *.msi, *.exe -ErrorAction SilentlyContinue |
+          Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.msi', '.exe' } |
             ForEach-Object {
               $name = "JMReader-$($_.Extension.TrimStart('.'))-$($env:GITHUB_SHA.Substring(0,7))$($_.Extension)"
               Copy-Item $_.FullName -Destination (Join-Path "artifacts" $name)
