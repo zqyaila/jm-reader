@@ -2,6 +2,9 @@ package com.jm.reader.desktop.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.focusable
+// `animateScrollBy` is a *top-level extension* on ScrollableState in `foundation.gestures`, not a
+// member of LazyListState — without this import it does not resolve.
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -153,17 +156,22 @@ fun ReaderScreen(
             when {
                 loading && read == null -> LoadingView(label = s.loading)
 
-                error != null && read == null -> ErrorView(error.orEmpty()) {
-                    scope.launch {
-                        loading = true
-                        error = null
-                        when (val r = repo.comicRead(chapterId)) {
-                            is RepoResult.Ok -> read = r.data
-                            is RepoResult.Err -> error = r.message
+                // Named arguments on purpose: `ErrorView`'s last parameter is `modifier`, so a
+                // trailing lambda would bind to it instead of to `onRetry`.
+                error != null && read == null -> ErrorView(
+                    message = error.orEmpty(),
+                    onRetry = {
+                        scope.launch {
+                            loading = true
+                            error = null
+                            when (val r = repo.comicRead(chapterId)) {
+                                is RepoResult.Ok -> read = r.data
+                                is RepoResult.Err -> error = r.message
+                            }
+                            loading = false
                         }
-                        loading = false
-                    }
-                }
+                    },
+                )
 
                 read == null -> EmptyView(s.loadFail)
 

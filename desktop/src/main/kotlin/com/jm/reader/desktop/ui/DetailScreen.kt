@@ -119,7 +119,12 @@ fun DetailScreen(
             val d = detail
             when {
                 loading && d == null -> LoadingView(label = s.loading)
-                error != null && d == null -> ErrorView(error.orEmpty()) { scope.launch { load() } }
+                // Named arguments on purpose: `ErrorView`'s last parameter is `modifier`, so a
+                // trailing lambda would bind to it instead of to `onRetry`.
+                error != null && d == null -> ErrorView(
+                    message = error.orEmpty(),
+                    onRetry = { scope.launch { load() } },
+                )
                 d == null -> EmptyView(s.loadFail)
                 else -> DetailContent(
                     detail = d,
@@ -140,7 +145,9 @@ private fun DetailContent(
 ) {
     val repo = LocalRepository.current
     val s = LocalAppStrings.current
-    val cover = repo.comicCoverDetail(detail.id, detail.addtime)
+    // A paid-but-not-unlocked work has no cover to fetch: a blank tile is better than leaking the
+    // artwork. Same rule as the Android detail screen.
+    val cover = if (detail.isPaid) "" else repo.comicCoverDetail(detail.id, detail.addtime)
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),

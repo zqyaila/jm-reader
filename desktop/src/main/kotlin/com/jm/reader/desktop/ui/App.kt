@@ -88,7 +88,12 @@ class AppContainer {
 @Composable
 fun App(container: AppContainer) {
     // Follow the OS theme on first run; the settings screen can override it for the session.
-    var dark by remember { mutableStateOf(isSystemInDarkTheme()) }
+    //
+    // `isSystemInDarkTheme()` is itself @Composable, so it cannot be read from inside the
+    // `remember` lambda (that lambda is a plain initialiser, not a composable scope). Read it
+    // here and hand it over as the remembered initial value.
+    val systemDark = isSystemInDarkTheme()
+    var dark by remember { mutableStateOf(systemDark) }
     val language by container.languageManager.language.collectAsState()
     val strings = remember(language) { AppStrings.forLanguage(language) }
 

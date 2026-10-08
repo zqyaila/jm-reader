@@ -207,6 +207,16 @@ class Repository(
         return "$host/media/albums/${id}_3x4.jpg?v=$updateAt"
     }
 
+    /**
+     * Cover URL for the detail screen.
+     *
+     * Kept as a separate name even though it resolves to the same 3x4 asset as [comicCover],
+     * because that is exactly how the Android repository is shaped: the detail header and the
+     * list tiles are allowed to diverge later (a taller crop for the big header, say) without
+     * having to touch every call site.
+     */
+    fun comicCoverDetail(id: String, addtime: Long): String = comicCover(id, addtime)
+
     /** Prefixes a relative media path with the current image host. */
     fun imgUrl(path: String): String {
         if (path.startsWith("http")) return path
