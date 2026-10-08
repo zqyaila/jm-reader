@@ -42,18 +42,81 @@ class AppThemeTokensTest {
         "labelSmall" to AppTypography.labelSmall,
     )
 
+    /**
+     * The three tracks of the M3 type scale, biggest to smallest.
+     *
+     * These are **deliberately separate lists**. Material's scale is not one descending line -
+     * `titleSmall` (14sp) is *smaller* than `bodyLarge` (16sp), and `bodySmall` (12sp) is smaller
+     * than `labelLarge` (14sp). The tracks are parallel and overlap at the seams, which is the
+     * point: a `title` is a small heading and a `body` is running text, and they are not ranked
+     * against each other by size.
+     *
+     * This distinction is not academic - an earlier version of this test asserted one global
+     * descending line, and it failed on exactly those two overlapping seams.
+     */
+    private val typeTracks = mapOf(
+        "display/headline/title" to listOf(
+            "displayLarge" to AppTypography.displayLarge,
+            "displayMedium" to AppTypography.displayMedium,
+            "displaySmall" to AppTypography.displaySmall,
+            "headlineLarge" to AppTypography.headlineLarge,
+            "headlineMedium" to AppTypography.headlineMedium,
+            "headlineSmall" to AppTypography.headlineSmall,
+            "titleLarge" to AppTypography.titleLarge,
+            "titleMedium" to AppTypography.titleMedium,
+            "titleSmall" to AppTypography.titleSmall,
+        ),
+        "body" to listOf(
+            "bodyLarge" to AppTypography.bodyLarge,
+            "bodyMedium" to AppTypography.bodyMedium,
+            "bodySmall" to AppTypography.bodySmall,
+        ),
+        "label" to listOf(
+            "labelLarge" to AppTypography.labelLarge,
+            "labelMedium" to AppTypography.labelMedium,
+            "labelSmall" to AppTypography.labelSmall,
+        ),
+    )
+
     @Test
-    fun `the type scale descends monotonically`() {
-        // A stray edit that makes bodyMedium bigger than titleSmall would invert the hierarchy and
-        // make section titles look like captions.
+    fun `each type track descends monotonically`() {
+        // Within a track, a stray edit that makes bodyMedium bigger than bodyLarge WOULD invert the
+        // hierarchy and make a paragraph's first line look like a caption. Asserted per track
+        // because that is the only monotonicity Material actually guarantees - see [typeTracks].
         // `zipWithNext`'s two-argument transform lets each Pair be destructured in place.
-        orderedSizes.zipWithNext { (biggerName, bigger), (smallerName, smaller) ->
-            assertTrue(
-                "expected $biggerName (${bigger.fontSize}) to be larger than " +
-                    "$smallerName (${smaller.fontSize})",
-                bigger.fontSize.value > smaller.fontSize.value,
-            )
+        typeTracks.forEach { (track, styles) ->
+            styles.zipWithNext { (biggerName, bigger), (smallerName, smaller) ->
+                assertTrue(
+                    "[$track] expected $biggerName (${bigger.fontSize}) to be larger than " +
+                        "$smallerName (${smaller.fontSize})",
+                    bigger.fontSize.value > smaller.fontSize.value,
+                )
+            }
         }
+    }
+
+    @Test
+    fun `the cross-track ordering that layout depends on still holds`() {
+        // The tracks overlap by design, but not *arbitrarily*: the relations below are the ones the
+        // screens actually rely on, so they are pinned explicitly rather than left to chance.
+        //  - a detail-page hero (headlineSmall) must out-rank the description under it (bodyLarge);
+        //  - a top-bar title (titleLarge) must out-rank the body text it sits above;
+        //  - a caption (labelSmall) must stay below the text it annotates (bodySmall).
+        assertTrue(
+            "headlineSmall (${AppTypography.headlineSmall.fontSize}) must exceed " +
+                "bodyLarge (${AppTypography.bodyLarge.fontSize})",
+            AppTypography.headlineSmall.fontSize.value > AppTypography.bodyLarge.fontSize.value,
+        )
+        assertTrue(
+            "titleLarge (${AppTypography.titleLarge.fontSize}) must exceed " +
+                "bodyLarge (${AppTypography.bodyLarge.fontSize})",
+            AppTypography.titleLarge.fontSize.value > AppTypography.bodyLarge.fontSize.value,
+        )
+        assertTrue(
+            "bodySmall (${AppTypography.bodySmall.fontSize}) must exceed " +
+                "labelSmall (${AppTypography.labelSmall.fontSize})",
+            AppTypography.bodySmall.fontSize.value > AppTypography.labelSmall.fontSize.value,
+        )
     }
 
     @Test
@@ -224,6 +287,9 @@ class AppThemeTokensTest {
         val ratio = AppMotion.spatialDefault.dampingRatio
         assertTrue("spatialDefault should have some bounce", ratio < 1f)
         assertTrue("spatialDefault must not be wildly underdamped", ratio >= 0.5f)
-        assertEquals(0.5f, AppMotion.spatialFast.dampingRatio)
+        // `spatialFast` *is* `GlassMotion.settle` (= spring 0.6 / 250), not `GlassMotion.press`
+        // (= spring 0.5 / 300). The second assertion in the test above already pins the identity;
+        // this one pins the number, so retuning `settle` cannot silently loosen the nav indicator.
+        assertEquals(0.6f, AppMotion.spatialFast.dampingRatio)
     }
 }
