@@ -17,20 +17,40 @@ kotlin {
     }
 }
 
-repositories {
-    // `google()` and `mavenCentral()` already come from the root project's
-    // `dependencyResolutionManagement`, but the desktop module also resolves the Compose
-    // Multiplatform plugin marker, so repeat them here for clarity when built standalone.
-    google()
-    mavenCentral()
-}
+// NOTE: no `repositories { }` block here on purpose.
+//
+// The root `settings.gradle.kts` sets `dependencyResolutionManagement { repositoriesMode =
+// FAIL_ON_PROJECT_REPOS }`, so a module that declares its own repositories makes Gradle fail
+// configuration outright:
+//
+//   "Build was configured to prefer settings repositories over project repositories but
+//    repository 'Google' was added by build file 'desktop/build.gradle.kts'"
+//
+// `google()` and `mavenCentral()` are already declared centrally there and are inherited by this
+// module. Add any new repository to `dependencyResolutionManagement` in settings.gradle.kts
+// instead of re-adding this block.
 
 dependencies {
-    // Compose Multiplatform for Desktop: Material 3 + the extended icon set, resolved for the
-    // OS the build runs on (Windows in CI -> the windows-x64 Skiko binary).
+    // Compose Multiplatform for Desktop, resolved for the OS the build runs on (Windows in CI ->
+    // the windows-x64 Skiko binary).
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
+
+    // Material icons: declared explicitly, for two reasons.
+    //
+    //  1. Compose Multiplatform 1.8.2 dropped the implicit transitive dependency on
+    //     `material-icons-core` ("Implicit dependency on material-icons-core removed" in the
+    //     1.8.2 release notes), so `Icons.Filled.Search` / `Home` / `AutoMirrored.ArrowBack`
+    //     would no longer resolve on their own.
+    //  2. `material-icons-extended` is pinned upstream at 1.7.3 and will not receive further
+    //     releases, so the `compose.materialIconsExtended` Gradle accessor is deprecated (and is
+    //     gone in newer plugin lines). Spelling out the coordinate is version-proof.
+    //
+    // `extended` is only needed for a few glyphs outside the core set (`AutoStories`,
+    // `NavigateBefore/Next`, `ContentCopy`); it is kept because the alternative is regressing the
+    // design to whatever the ~50 core icons happen to offer.
+    implementation("org.jetbrains.compose.material:material-icons-core:1.7.3")
+    implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
 
     // Compose Desktop needs a `Dispatchers.Main`; the Swing module supplies the AWT/EDT one.
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.1")
