@@ -25,12 +25,16 @@ jobs:
     name: Build Windows installer
     runs-on: windows-latest
 
-    # jpackage shells out to a *separate* JVM, so it does not inherit the -Dfile.encoding=UTF-8
-    # that gradle.properties sets for Gradle itself - it picks up the runner's ANSI code page
-    # (windows-1252) instead. The installer strings in desktop/build.gradle.kts are non-ASCII and
-    # jpackage feeds them straight into the WiX sources it generates, so a mismatch there does not
-    # surface as an encoding error; it surfaces much later as a candle/light failure. Pinning the
-    # encoding for every JVM in the job removes the variable rather than working around it.
+    # Every JVM in this job - Gradle, the forked Kotlin compiler, jlink and jpackage alike - reads
+    # UTF-8. The desktop sources contain Chinese string literals, and a JVM that defaults to the
+    # runner's ANSI code page would mangle them.
+    #
+    # This is NOT what fixed the installer though. light.exe was failing with LGHT0311 ("a string
+    # was provided with characters that are not available in the specified database code page
+    # '1252'"), which is about the *MSI string table's* code page, not about how the bytes reach
+    # WiX; pinning the JVM encoding could never have helped. jpackage always links with
+    # `-cultures:en-us`, so the fix is to keep the jpackage metadata fields in
+    # desktop/build.gradle.kts ASCII-only - which is now enforced at configuration time there.
     env:
       JAVA_TOOL_OPTIONS: -Dfile.encoding=UTF-8
 
