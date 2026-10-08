@@ -1,0 +1,639 @@
+{
+  "title": "JM Reader",
+  "brief": "非官方第三方漫画阅读客户端：浏览/搜索作品、查看详情、按章节阅读。本次重构把现有界面统一到 Material 3 Expressive：一个自适应搜索框（不区分作品/作者/ID）、封面网格带 JM 号角标、详情页一眼看清章节、阅读器专注内容本身。品牌主色为橙色，默认深色 + 液态玻璃质感。",
+  "frame": "phone",
+  "platform": "android",
+  "paletteKey": "amber",
+  "theme": {
+    "dark": true,
+    "bothModes": true,
+    "contrast": "standard",
+    "shape": "rounded",
+    "font": "robotoFlex",
+    "emphasized": true,
+    "motion": "expressive"
+  },
+  "frames": [
+    {
+      "id": "home",
+      "name": "首页",
+      "x": 0,
+      "y": 0,
+      "note": "启动后的首页：顶部搜索入口 + 推荐位 + 最新作品两列网格，向下滚动自动加载下一页。",
+      "bg": "surfaceContainerLow"
+    },
+    {
+      "id": "search",
+      "name": "搜索",
+      "x": 492,
+      "y": 0,
+      "note": "一个自适应搜索框：输入关键词走站内搜索，输入纯数字 / JM 号 / 作品链接则直接打开作品。未输入时展示热门标签。"
+    },
+    {
+      "id": "detail",
+      "name": "作品详情",
+      "x": 984,
+      "y": 0,
+      "note": "作品信息与章节列表；顶部可一键复制 JM 号，底部\"开始阅读\"进入第一话。"
+    },
+    {
+      "id": "reader",
+      "name": "阅读器",
+      "x": 1476,
+      "y": 0,
+      "note": "竖向连续阅读：整章页面一列到底，自动还原被打乱的页面，底部可切换上一话 / 下一话。"
+    },
+    {
+      "id": "settings",
+      "name": "设置",
+      "x": 1968,
+      "y": 0,
+      "note": "语言、深色主题、缓存清理与关于信息。"
+    }
+  ],
+  "groups": [
+    {
+      "id": "home_bar",
+      "x": 0,
+      "y": 0,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_topbar",
+          "kind": "topAppBar",
+          "label": "JM Reader",
+          "icon": null,
+          "icon2": "search",
+          "variant": "filled",
+          "note": "右上角搜索图标切换到搜索页。",
+          "actions": {
+            "icon2": { "to": "search", "transition": "fade" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "home_search",
+      "x": 16,
+      "y": 100,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_searchbar",
+          "kind": "searchBar",
+          "label": "搜索作品 / 作者，或输入 JM 号",
+          "icon": null,
+          "variant": "filled",
+          "action": { "to": "search", "transition": "fade" }
+        }
+      ]
+    },
+    {
+      "id": "home_featured_label",
+      "x": 16,
+      "y": 170,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_featured_text",
+          "kind": "text",
+          "label": "推荐",
+          "icon": null,
+          "variant": "filled",
+          "size": 20,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "home_featured",
+      "x": 16,
+      "y": 206,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_featured_card",
+          "kind": "card",
+          "label": "本周精选作品",
+          "supporting": "点击进入作品详情",
+          "icon": null,
+          "variant": "elevated",
+          "size": 380,
+          "size2": 200,
+          "action": { "to": "detail", "transition": "slide" }
+        }
+      ]
+    },
+    {
+      "id": "home_latest_label",
+      "x": 16,
+      "y": 426,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_latest_text",
+          "kind": "text",
+          "label": "最新",
+          "icon": null,
+          "variant": "filled",
+          "size": 20,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "home_card_a",
+      "x": 16,
+      "y": 462,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_card_1",
+          "kind": "card",
+          "label": "作品标题一",
+          "supporting": "JM1234567",
+          "icon": null,
+          "variant": "filled",
+          "size": 182,
+          "size2": 250,
+          "action": { "to": "detail", "transition": "slide" }
+        }
+      ]
+    },
+    {
+      "id": "home_card_b",
+      "x": 214,
+      "y": 462,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_card_2",
+          "kind": "card",
+          "label": "作品标题二",
+          "supporting": "JM1234568",
+          "icon": null,
+          "variant": "filled",
+          "size": 182,
+          "size2": 250,
+          "action": { "to": "detail", "transition": "slide" }
+        }
+      ]
+    },
+    {
+      "id": "home_nav",
+      "x": 0,
+      "y": 788,
+      "axis": "x",
+      "items": [
+        {
+          "id": "home_bottomnav",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            { "icon": "home", "label": "首页" },
+            { "icon": "search", "label": "搜索" },
+            { "icon": "settings", "label": "设置" }
+          ],
+          "selected": 0,
+          "actions": {
+            "tab:1": { "to": "search", "transition": "fade" },
+            "tab:2": { "to": "settings", "transition": "fade" }
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "search_bar",
+      "x": 492,
+      "y": 0,
+      "axis": "x",
+      "items": [
+        {
+          "id": "search_topbar",
+          "kind": "topAppBar",
+          "label": "搜索",
+          "icon": null,
+          "icon2": null,
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "search_field",
+      "x": 508,
+      "y": 100,
+      "axis": "x",
+      "items": [
+        {
+          "id": "search_input",
+          "kind": "searchBar",
+          "label": "搜索作品 / 作者，或输入 JM 号",
+          "icon": null,
+          "variant": "filled",
+          "note": "自适应搜索：关键词同时命中标题、作者与标签；纯数字 / JM123456 / 作品链接直接跳转作品。"
+        }
+      ]
+    },
+    {
+      "id": "search_hot_label",
+      "x": 508,
+      "y": 170,
+      "axis": "x",
+      "items": [
+        {
+          "id": "search_hot_text",
+          "kind": "text",
+          "label": "热门标签",
+          "icon": null,
+          "variant": "filled",
+          "size": 20,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "search_chips",
+      "x": 508,
+      "y": 206,
+      "axis": "x",
+      "items": [
+        { "id": "search_chip_1", "kind": "chip", "label": "中文", "icon": null, "variant": "filled" },
+        { "id": "search_chip_2", "kind": "chip", "label": "無修正", "icon": null, "variant": "filled" },
+        { "id": "search_chip_3", "kind": "chip", "label": "同人", "icon": null, "variant": "filled" },
+        { "id": "search_chip_4", "kind": "chip", "label": "單行本", "icon": null, "variant": "filled" }
+      ]
+    },
+    {
+      "id": "search_result_label",
+      "x": 508,
+      "y": 254,
+      "axis": "x",
+      "items": [
+        {
+          "id": "search_result_text",
+          "kind": "text",
+          "label": "搜索结果 · 共 128 部作品",
+          "icon": null,
+          "variant": "filled",
+          "size": 16
+        }
+      ]
+    },
+    {
+      "id": "search_results",
+      "x": 508,
+      "y": 292,
+      "axis": "y",
+      "items": [
+        {
+          "id": "search_row_1",
+          "kind": "listItem",
+          "label": "搜索结果标题一",
+          "supporting": "JM1234567 · 作者名",
+          "icon": null,
+          "variant": "filled",
+          "action": { "to": "detail", "transition": "slide" }
+        },
+        {
+          "id": "search_row_2",
+          "kind": "listItem",
+          "label": "搜索结果标题二",
+          "supporting": "JM1234568 · 作者名",
+          "icon": null,
+          "variant": "filled",
+          "action": { "to": "detail", "transition": "slide" }
+        },
+        {
+          "id": "search_row_3",
+          "kind": "listItem",
+          "label": "搜索结果标题三",
+          "supporting": "JM1234569 · 作者名",
+          "icon": null,
+          "variant": "filled",
+          "action": { "to": "detail", "transition": "slide" }
+        }
+      ]
+    },
+    {
+      "id": "search_nav",
+      "x": 492,
+      "y": 788,
+      "axis": "x",
+      "items": [
+        {
+          "id": "search_bottomnav",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            { "icon": "home", "label": "首页" },
+            { "icon": "search", "label": "搜索" },
+            { "icon": "settings", "label": "设置" }
+          ],
+          "selected": 1,
+          "actions": {
+            "tab:0": { "to": "home", "transition": "fade" },
+            "tab:2": { "to": "settings", "transition": "fade" }
+          }
+        }
+      ]
+    },
+
+    {
+      "id": "detail_bar",
+      "x": 984,
+      "y": 0,
+      "axis": "x",
+      "items": [
+        {
+          "id": "detail_topbar",
+          "kind": "topAppBar",
+          "label": "作品详情",
+          "icon": "arrow_back",
+          "icon2": "content_copy",
+          "variant": "filled",
+          "note": "复制图标把该作品的 JM 号复制到剪贴板。",
+          "actions": {
+            "icon": { "to": "back", "transition": "slide" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "detail_header",
+      "x": 1000,
+      "y": 100,
+      "axis": "x",
+      "items": [
+        {
+          "id": "detail_card",
+          "kind": "card",
+          "label": "作品标题",
+          "supporting": "作者名 · JM1234567 · 12.3k 浏览 · 24 页",
+          "icon": null,
+          "variant": "elevated",
+          "size": 380,
+          "size2": 210
+        }
+      ]
+    },
+    {
+      "id": "detail_start",
+      "x": 1000,
+      "y": 326,
+      "axis": "x",
+      "items": [
+        {
+          "id": "detail_start_button",
+          "kind": "button",
+          "label": "开始阅读",
+          "icon": "play_arrow",
+          "variant": "filled",
+          "size": 380,
+          "action": { "to": "reader", "transition": "slide" }
+        }
+      ]
+    },
+    {
+      "id": "detail_chapter_label",
+      "x": 1000,
+      "y": 398,
+      "axis": "x",
+      "items": [
+        {
+          "id": "detail_chapter_text",
+          "kind": "text",
+          "label": "章节列表",
+          "icon": null,
+          "variant": "filled",
+          "size": 20,
+          "bold": true
+        }
+      ]
+    },
+    {
+      "id": "detail_chapters",
+      "x": 1000,
+      "y": 434,
+      "axis": "y",
+      "items": [
+        {
+          "id": "detail_chapter_1",
+          "kind": "listItem",
+          "label": "第 1 话",
+          "supporting": "24 页",
+          "icon": null,
+          "variant": "filled",
+          "action": { "to": "reader", "transition": "slide" }
+        },
+        {
+          "id": "detail_chapter_2",
+          "kind": "listItem",
+          "label": "第 2 话",
+          "supporting": "26 页",
+          "icon": null,
+          "variant": "filled",
+          "action": { "to": "reader", "transition": "slide" }
+        },
+        {
+          "id": "detail_chapter_3",
+          "kind": "listItem",
+          "label": "第 3 话",
+          "supporting": "22 页",
+          "icon": null,
+          "variant": "filled",
+          "action": { "to": "reader", "transition": "slide" }
+        }
+      ]
+    },
+
+    {
+      "id": "reader_bar",
+      "x": 1476,
+      "y": 0,
+      "axis": "x",
+      "items": [
+        {
+          "id": "reader_topbar",
+          "kind": "topAppBar",
+          "label": "第 1 话",
+          "icon": "arrow_back",
+          "icon2": "list",
+          "variant": "filled",
+          "note": "返回回到作品详情；右侧列表图标打开章节选择。",
+          "actions": {
+            "icon": { "to": "back", "transition": "slide" }
+          }
+        }
+      ]
+    },
+    {
+      "id": "reader_page",
+      "x": 1492,
+      "y": 100,
+      "axis": "x",
+      "items": [
+        {
+          "id": "reader_image",
+          "kind": "image",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "size": 380,
+          "note": "整章页面竖向连续排列，逐张加载；被打乱的页面在解码后自动还原。"
+        }
+      ]
+    },
+    {
+      "id": "reader_progress",
+      "x": 1492,
+      "y": 500,
+      "axis": "x",
+      "items": [
+        {
+          "id": "reader_linear",
+          "kind": "linearProgress",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "value": 40,
+          "wavy": true,
+          "note": "读到本章的进度。"
+        }
+      ]
+    },
+    {
+      "id": "reader_nav",
+      "x": 1492,
+      "y": 560,
+      "axis": "x",
+      "items": [
+        {
+          "id": "reader_prev",
+          "kind": "iconButton",
+          "label": "上一话",
+          "icon": "skip_previous",
+          "variant": "tonal",
+          "note": "切到上一话，不可用时置灰。"
+        },
+        {
+          "id": "reader_next",
+          "kind": "iconButton",
+          "label": "下一话",
+          "icon": "skip_next",
+          "variant": "tonal",
+          "note": "切到下一话，不可用时置灰。"
+        }
+      ]
+    },
+
+    {
+      "id": "settings_bar",
+      "x": 1968,
+      "y": 0,
+      "axis": "x",
+      "items": [
+        {
+          "id": "settings_topbar",
+          "kind": "topAppBar",
+          "label": "设置",
+          "icon": null,
+          "icon2": null,
+          "variant": "filled"
+        }
+      ]
+    },
+    {
+      "id": "settings_list",
+      "x": 1984,
+      "y": 100,
+      "axis": "y",
+      "items": [
+        {
+          "id": "settings_language",
+          "kind": "listItem",
+          "label": "语言",
+          "supporting": "繁體中文",
+          "icon": "language",
+          "variant": "filled",
+          "note": "在简体中文 / 繁體中文 / English 之间切换，立即生效。"
+        },
+        {
+          "id": "settings_dark",
+          "kind": "listItem",
+          "label": "深色主题",
+          "supporting": "跟随系统",
+          "icon": "dark_mode",
+          "variant": "filled",
+          "switch": true,
+          "checked": true
+        },
+        {
+          "id": "settings_cache",
+          "kind": "listItem",
+          "label": "清除图片缓存",
+          "icon": "delete_sweep",
+          "variant": "filled",
+          "note": "释放已缓存的封面与页面图片；下次阅读会重新下载。"
+        }
+      ]
+    },
+    {
+      "id": "settings_divider",
+      "x": 1984,
+      "y": 330,
+      "axis": "x",
+      "items": [
+        { "id": "settings_div", "kind": "divider", "label": "", "icon": null, "variant": "filled" }
+      ]
+    },
+    {
+      "id": "settings_about",
+      "x": 1984,
+      "y": 366,
+      "axis": "x",
+      "items": [
+        {
+          "id": "settings_about_card",
+          "kind": "card",
+          "label": "关于 JM Reader",
+          "supporting": "非官方第三方客户端，仅供个人使用与技术学习。内容版权归原作者所有，本应用不托管任何内容。",
+          "icon": null,
+          "variant": "outlined",
+          "noImage": true,
+          "size": 380,
+          "size2": 150
+        }
+      ]
+    },
+    {
+      "id": "settings_nav",
+      "x": 1968,
+      "y": 788,
+      "axis": "x",
+      "items": [
+        {
+          "id": "settings_bottomnav",
+          "kind": "bottomNav",
+          "label": "",
+          "icon": null,
+          "variant": "filled",
+          "tabs": [
+            { "icon": "home", "label": "首页" },
+            { "icon": "search", "label": "搜索" },
+            { "icon": "settings", "label": "设置" }
+          ],
+          "selected": 2,
+          "actions": {
+            "tab:0": { "to": "home", "transition": "fade" },
+            "tab:1": { "to": "search", "transition": "fade" }
+          }
+        }
+      ]
+    }
+  ]
+}

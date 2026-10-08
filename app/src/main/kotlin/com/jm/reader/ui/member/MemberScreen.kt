@@ -3,20 +3,22 @@ package com.jm.reader.ui.member
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -25,10 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.jm.reader.data.model.Member
 import com.jm.reader.data.repo.RepoResult
+import com.jm.reader.ui.BottomNavReserve
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalLanguageManager
 import com.jm.reader.ui.LocalRepository
@@ -46,6 +46,8 @@ import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.UiLanguage
 import com.jm.reader.ui.theme.AdFreeAccent
+import com.jm.reader.ui.theme.GlassPanel
+import com.jm.reader.ui.theme.GlassShape
 import kotlinx.coroutines.launch
 
 @Composable
@@ -56,9 +58,16 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
     val languageManager = LocalLanguageManager.current
     val language by languageManager.language.collectAsState()
     val scope = rememberCoroutineScope()
-    var loggedIn by remember { mutableStateOf(session.isLoggedIn) }
+    // Reads the observable session state so the profile appears as soon as login succeeds.
+    val loggedIn by session.loggedInFlow.collectAsState()
 
-    Column(modifier.fillMaxSize()) {
+    Column(
+        modifier
+            .fillMaxSize()
+            // Scrollable with a bottom reserve so the last row clears the floating glass nav pill.
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = BottomNavReserve),
+    ) {
         Text(s.member, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
 
         val member = if (loggedIn) repo.member else null
@@ -67,7 +76,7 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
                 Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(72.dp))
                 Text(s.notLoggedIn, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
                 Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { navController.navigate(Routes.LOGIN) }) { Text(s.login) }
+                    Button(onClick = { navController.navigate(Routes.login()) }) { Text(s.login) }
                     OutlinedButton(onClick = { navController.navigate(Routes.REGISTER) }) { Text(s.register) }
                 }
             }
@@ -78,7 +87,6 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
                 scope.launch {
                     repo.logout()
                     session.clearAuth()
-                    loggedIn = false
                 }
             }
         }
@@ -99,8 +107,9 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
 
 @Composable
 private fun MemberProfile(member: Member, s: com.jm.reader.ui.strings.AppStrings) {
-    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Column(Modifier.padding(16.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        GlassPanel(modifier = Modifier.fillMaxWidth(), shape = GlassShape, blurRadius = 26.dp) {
+            Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     member.nickName.ifBlank { member.username }.ifBlank { s.memberProfile },
@@ -125,6 +134,7 @@ private fun MemberProfile(member: Member, s: com.jm.reader.ui.strings.AppStrings
                 Text("${s.levelLabel}${member.levelName.ifBlank { member.level }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text("${s.coinLabel}${member.coin}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }

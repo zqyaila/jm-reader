@@ -18,6 +18,13 @@ local.properties
 # OS
 .DS_Store
 Thumbs.db
+# Windows "downloaded from the internet" marker files (they break the resource merger)
+*:Zone.Identifier
 
 # Test report
 TEST_REPORT.md
+
+# Local agent state (session notes / scratch) - not part of the app
+.workbuddy/
+# Reverse-engineering scratch material (reference scripts + __pycache__)
+.refs/

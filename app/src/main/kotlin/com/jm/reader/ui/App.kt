@@ -1,5 +1,10 @@
 package com.jm.reader.ui
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -35,6 +40,7 @@ import com.jm.reader.ui.novels.NovelsScreen
 import com.jm.reader.ui.reader.ReaderScreen
 import com.jm.reader.ui.search.SearchScreen
 import com.jm.reader.ui.splash.SplashScreen
+import com.jm.reader.ui.theme.AppBackdrop
 import com.jm.reader.ui.week.WeekScreen
 
 @Composable
@@ -46,10 +52,16 @@ fun JMRoot(app: JMApplication) {
         LocalSession provides app.session,
         LocalLanguageManager provides app.languageManager,
         LocalDownloadManager provides app.downloadManager,
+        LocalHistoryManager provides app.historyManager,
+        LocalSearchHistoryManager provides app.searchHistoryManager,
         LocalAppStrings provides strings,
     ) {
         val navController = rememberNavController()
-        AppNavHost(navController)
+        // One backdrop for the whole app: every translucent glass surface refracts this layer.
+        Box(Modifier.fillMaxSize()) {
+            AppBackdrop()
+            AppNavHost(navController)
+        }
         // Show a copyable crash report if the previous run crashed.
         CrashReportOverlay(app)
     }
@@ -60,11 +72,27 @@ fun AppNavHost(navController: NavHostController) {
     NavHost(
         navController = navController,
         startDestination = Routes.SPLASH,
+        enterTransition = { fadeIn(tween(220)) },
+        exitTransition = { fadeOut(tween(180)) },
+        popEnterTransition = { fadeIn(tween(220)) },
+        popExitTransition = { fadeOut(tween(180)) },
     ) {
         composable(Routes.SPLASH) { SplashScreen(navController) }
         composable(Routes.MAIN) { MainScreen(navController) }
 
-        composable(Routes.SEARCH) { SearchScreen(navController) }
+        composable(
+            Routes.SEARCH,
+            arguments = listOf(
+                navArgument("mode") { type = NavType.StringType; defaultValue = "work" },
+                navArgument("q") { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            SearchScreen(
+                navController,
+                initialMode = entry.arguments?.getString("mode").orEmpty(),
+                initialQuery = entry.arguments?.getString("q").orEmpty(),
+            )
+        }
         composable(Routes.CATEGORIES) { CategoriesScreen(navController, Modifier) }
         composable(Routes.WEEK) { WeekScreen(navController) }
         composable(Routes.DAILY) { DailyScreen(navController) }
@@ -129,7 +157,12 @@ fun AppNavHost(navController: NavHostController) {
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
         ) { entry -> MovieDetailScreen(navController, entry.arguments?.getString("id").orEmpty()) }
 
-        composable(Routes.LOGIN) { LoginScreen(navController) }
+        composable(
+            Routes.LOGIN,
+            arguments = listOf(navArgument("username") { type = NavType.StringType; defaultValue = "" }),
+        ) { entry ->
+            LoginScreen(navController, initialUsername = entry.arguments?.getString("username").orEmpty())
+        }
         composable(Routes.REGISTER) { RegisterScreen(navController) }
     }
 }

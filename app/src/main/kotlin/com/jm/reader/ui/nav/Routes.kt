@@ -1,5 +1,7 @@
 package com.jm.reader.ui.nav
 
+import android.net.Uri
+
 object Routes {
     const val SPLASH = "splash"
 
@@ -10,7 +12,13 @@ object Routes {
     const val TAB_LIBRARY = "tab_library"
     const val TAB_MEMBER = "tab_member"
 
-    const val SEARCH = "search"
+    /**
+     * Search screen. Both query args are optional, so `search` works for a plain search while
+     * [search] builds deep links for author / keyword / id searches.
+     *   mode -> "work" (default) | "author" | "id"
+     *   q    -> pre-filled query (keyword, author name or comic id)
+     */
+    const val SEARCH = "search?mode={mode}&q={q}"
     const val CATEGORIES = "categories"
     const val WEEK = "week"
     const val DAILY = "daily"
@@ -31,10 +39,19 @@ object Routes {
     const val GAME_DETAIL = "game/{id}"
     const val BLOG_DETAIL = "blog/{id}"
 
-    const val LOGIN = "login"
+    /** Login screen with an optional pre-filled account name (e.g. right after registering). */
+    const val LOGIN = "login?username={username}"
     const val REGISTER = "register"
 
     fun comicDetail(id: String) = "comic/$id"
+    fun login(username: String? = null): String =
+        if (username.isNullOrBlank()) "login" else "login?username=" + Uri.encode(username)
+    fun search(mode: String? = null, q: String? = null): String {
+        val params = mutableListOf<String>()
+        if (!mode.isNullOrBlank()) params += "mode=" + Uri.encode(mode)
+        if (!q.isNullOrBlank()) params += "q=" + Uri.encode(q)
+        return if (params.isEmpty()) "search" else "search?" + params.joinToString("&")
+    }
     fun reader(id: String, readId: String? = null) =
         "reader/$id" + (readId?.let { "?readId=$it" } ?: "")
     fun comicList(type: String, title: String, id: String? = null) =

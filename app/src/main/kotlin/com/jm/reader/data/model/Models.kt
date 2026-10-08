@@ -41,6 +41,16 @@ fun JSONObject.strList(key: String): List<String> {
     }
 }
 
+/**
+ * First non-blank value of a field that may be a bare string **or** an array of strings, else null.
+ *
+ * The API is inconsistent about this: `/latest` and `/search` send `author` as a single string,
+ * while `/album` sends it as an array. An empty array must yield null - falling back to
+ * `optString` would put the literal `"[]"` on a card as if it were an author name.
+ */
+fun JSONObject.firstStr(key: String): String? =
+    strList(key).firstOrNull() ?: (opt(key) as? String)?.takeIf { it.isNotBlank() }
+
 /** Reads a field that may be a JSONObject, a JSON array, or absent (returns the list or empty). */
 fun JSONObject.objList(key: String): List<JSONObject> {
     if (!has(key) || isNull(key)) return emptyList()
@@ -90,7 +100,7 @@ data class ComicListItem(
         fun fromJson(o: JSONObject): ComicListItem = ComicListItem(
             id = o.str("id"),
             name = o.str("name"),
-            author = o.strList("author").firstOrNull() ?: o.strOrNull("author"),
+            author = o.firstStr("author"),
             image = o.str("image"),
             category = CategoryRef.fromJson(o.obj("category")),
             categorySub = CategoryRef.fromJson(o.obj("category_sub")),
@@ -278,7 +288,7 @@ data class NovelItem(
         fun fromJson(o: JSONObject): NovelItem = NovelItem(
             id = o.str("id"),
             name = o.str("name"),
-            author = o.strList("author").firstOrNull() ?: o.strOrNull("author"),
+            author = o.firstStr("author"),
             image = o.str("image"),
             updateAt = o.long("update_at"),
         )
@@ -356,3 +366,121 @@ data class ForumItem(
         )
     }
 }
+
+/**
+ * One album comment, from `GET /forum?mode=manhua&aid=<album>&page=<n>`.
+ *
+ * The live payload is `{"total": "23", "list": [<comment>, …]}` with a **flat** list — replies are
+ * not nested, they are linked back to their parent through [parentCid] (`"0"` for a top-level
+ * comment). [replies] is still parsed because the same endpoint serves the desktop client a nested
+ * `replys` array for some scopes, and threading the flat form is the caller's job
+ * (`CommentsController`, which folds both representations into one tree).
+ *
+ * Field names mirror the API (`CID`, `UID`, `expinfo.level_name`, …), with the same
+ * lower/upper-case tolerance the other models have.
+ *
+ * Avatar files are relative: the client resolves them against the image host under `/media/users/`
+ * (see [com.jm.reader.data.repo.AppRepository.commentAvatar]). `nopic-*.gif` is the API's
+ * "no avatar" placeholder and is reported as null so the UI can draw its own.
+ */
+data class CommentItem(
+    val cid: String = "",
+    val uid: String = "",
+    val username: String = "",
+    /** Raw avatar filename; null when the comment has no real picture. */
+    val avatar: String? = null,
+    val content: String = "",
+    val likes: Long = 0L,
+    val addtime: String = "",
+    val level: String = "",
+    val levelName: String = "",
+    /** `parent_CID`: the comment this one replies to, or "0"/blank for top-level. */
+    val parentCid: String = "",
+    /** Album this comment is attached to (`AID`), for the "on <work>" backlink. */
+    val linkAlbumId: String? = null,
+    val linkAlbumName: String? = null,
+    val replies: List<CommentItem> = emptyList(),
+) {
+    /** True when the API did not nest this comment under another one. */
+    val isTopLevel: Boolean get() = parentCid.isBlank() || parentCid == "0"
+
+    companion object {
+        fun fromJson(o: JSONObject): CommentItem {
+            val exp = o.obj("expinfo")
+            val photo = o.str("photo").trim()
+            return CommentItem(
+                cid = o.str("CID").ifBlank { o.str("cid") },
+                uid = o.str("UID").ifBlank { o.str("uid") },
+                username = o.str("username").ifBlank { o.str("nickname") },
+                avatar = photo.takeIf { it.isNotBlank() && !it.startsWith("nopic", ignoreCase = true) },
+                content = o.str("content"),
+                likes = o.long("likes"),
+                addtime = o.str("addtime"),
+                level = exp?.str("level").orEmpty().ifBlank { o.str("level") },
+                levelName = exp?.str("level_name").orEmpty().ifBlank { o.str("title") },
+                parentCid = o.str("parent_CID").ifBlank { o.str("parent_cid") }.trim(),
+                linkAlbumId = o.strOrNull("AID")?.takeIf { it.isNotBlank() },
+                linkAlbumName = o.strOrNull("name")?.takeIf { it.isNotBlank() },
+                replies = o.objList("replys").map { fromJson(it) },
+            )
+        }
+    }
+}
+
+/** One page of album comments: `{ "total": <int|string>, "list": [...] }`. */
+data class CommentPage(
+    val total: Int = 0,
+    val items: List<CommentItem> = emptyList(),
+)
+
+/**
+ * Folds a flat page into threads: every comment whose [CommentItem.parentCid] names another comment
+ * on the same page is attached under it (recursively, depth-capped), everything else stays at the
+ * top level. Comments whose parent is missing from the page are kept at the top level rather than
+ * dropped, so a filtered/deleted parent never hides its replies.
+ */
+fun buildCommentThreads(page: List<CommentItem>): List<CommentItem> {
+    if (page.isEmpty()) return emptyList()
+    val byCid = page.associateBy { it.cid }
+
+    // Resolve each comment to the highest ancestor reachable *within this page*.
+    //
+    // Doing it this way (rather than asking "is this a root?") is what keeps a comment from being
+    // emitted twice. When a chain's middle link is missing - common, because a deleted parent or a
+    // page that has not been fetched yet leaves a hole - the child's own parent *does* exist, so the
+    // child is a descendant, not a root, even though the walk cannot reach the very top. Both ends
+    // resolve to the same root and the child is placed exactly once.
+    //
+    // A cycle (two comments naming each other) makes the walk revisit a comment; that comment then
+    // becomes its own root, so the thread is still rendered rather than vanishing.
+    fun threadRootOf(c: CommentItem): String {
+        val seen = HashSet<String>()
+        var cur = c
+        while (true) {
+            if (!seen.add(cur.cid)) return c.cid
+            if (cur.isTopLevel) return cur.cid
+            cur = byCid[cur.parentCid] ?: return cur.cid
+        }
+    }
+
+    val roots = LinkedHashMap<String, CommentItem>()
+    val childrenByParent = HashMap<String, MutableList<CommentItem>>()
+    for (c in page) {
+        if (threadRootOf(c) == c.cid) roots[c.cid] = c
+        else childrenByParent.getOrPut(c.parentCid) { mutableListOf() }.add(c)
+    }
+
+    // `visited` bounds the recursion depth and stops a malformed shared node from attaching twice.
+    val visited = HashSet<String>()
+    fun attach(node: CommentItem, depth: Int): CommentItem {
+        if (!visited.add(node.cid)) return node
+        if (depth >= MAX_REPLY_DEPTH) return node
+        val kids = childrenByParent[node.cid].orEmpty().map { attach(it, depth + 1) }
+        return if (kids.isEmpty()) node else node.copy(replies = node.replies + kids)
+    }
+
+    return roots.values.map { attach(it, 0) }
+}
+
+/** Threads deeper than this are flattened; real threads are 1-3 levels. */
+private const val MAX_REPLY_DEPTH = 4

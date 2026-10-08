@@ -1,0 +1,96 @@
+name: Android CI
+
+# Builds the Android artifacts on every push / pull request and makes them downloadable from the
+# run's "Artifacts" section. Also usable as a manual build check.
+#
+#   * debug APK   - always built; installs side by side with a release build
+#   * release APK - built only when the signing secrets are configured (see README); without them
+#                   `assembleRelease` would only produce an unsigned APK of little use
+#   * unit tests  - the pure-logic suite under app/src/test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    # A step-level `if` cannot read the `secrets` context, so the "are signing secrets present?"
+    # check is pre-computed into a plain string here and tested as `env.HAS_KEYSTORE == 'true'`.
+    env:
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      # The runner image ships an Android SDK whose licenses are already accepted.
+      # This step adds compileSdk 36 if the image does not have it yet; when no
+      # sdkmanager is found the Android Gradle Plugin downloads it on demand.
+      - name: Ensure Android SDK platform 36
+        run: |
+          # Failures here are not fatal: Gradle downloads missing SDK packages itself.
+          SDKMANAGER="$(ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1 || true)"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+            yes | "$SDKMANAGER" "platform-tools" "platforms;android-36" "build-tools;36.0.0" || true
+          else
+            echo "sdkmanager not found - letting Gradle resolve the SDK packages"
+          fi
+
+      - name: Unit tests
+        run: |
+          # The wrapper is committed without the executable bit, so set it here.
+          chmod +x ./gradlew
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
+
+      - name: Build debug APK
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Restore release keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > jmreader.keystore
+          ls -l jmreader.keystore
+
+      - name: Build release APK
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          JMREADER_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          JMREADER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          JMREADER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Collect APKs
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/app-debug.apk "artifacts/JMReader-debug-${GITHUB_SHA::7}.apk"
+          if [ -d app/build/outputs/apk/release ]; then
+            find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' \
+              -exec cp {} "artifacts/JMReader-release-${GITHUB_SHA::7}.apk" \; || true
+          fi
+          ls -lh artifacts
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: jm-reader-apk
+          path: artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 30

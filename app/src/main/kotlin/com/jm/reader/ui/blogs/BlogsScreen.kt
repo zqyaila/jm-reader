@@ -1,8 +1,6 @@
 package com.jm.reader.ui.blogs
 
-import android.text.Html
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import com.jm.reader.util.stripHtml
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -28,7 +25,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,6 +40,10 @@ import com.jm.reader.ui.components.AppTopBar
 import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
+import com.jm.reader.ui.theme.GlassShape
+import com.jm.reader.ui.theme.GlassShapeLarge
+import com.jm.reader.ui.theme.glassClickable
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -76,14 +76,19 @@ fun BlogsScreen(navController: NavHostController) {
                 else -> LazyColumn(Modifier.fillMaxSize()) {
                     items(items, key = { it.id }) { blog ->
                         Column(
-                            Modifier.fillMaxWidth().clickable {
-                                scope.launch {
-                                    when (val r = repo.blogInfo(blog.id)) {
-                                        is RepoResult.Ok -> viewing = r.data
-                                        is RepoResult.Err -> Unit
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                                .glassClickable(shape = GlassShape) {
+                                    scope.launch {
+                                        when (val r = repo.blogInfo(blog.id)) {
+                                            is RepoResult.Ok -> viewing = r.data
+                                            is RepoResult.Err -> Unit
+                                        }
                                     }
                                 }
-                            }.padding(horizontal = 14.dp, vertical = 12.dp),
+                                .glassSurface(shape = GlassShape)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
                         ) {
                             Text(blog.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             if (blog.image.isNotBlank()) {
@@ -109,13 +114,12 @@ fun BlogsScreen(navController: NavHostController) {
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = 560.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .glassSurface(shape = GlassShapeLarge)
                     .padding(16.dp),
             ) {
                 Text(blog.optString("title").ifBlank { s.article }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth())
                 Text(
-                    blog.optString("content").let { runCatching { Html.fromHtml(it).toString() }.getOrDefault(it) },
+                    stripHtml(blog.optString("content")),
                     style = MaterialTheme.typography.bodyMedium,
                     lineHeight = 22.sp,
                     modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(top = 8.dp),

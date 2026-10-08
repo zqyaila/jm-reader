@@ -7,34 +7,38 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val DarkColors = darkColorScheme(
+// `internal` (not private) so GlassContrastTest can assert the canvas opacity: the page canvas
+// must stay near-opaque, otherwise body text ends up sitting on the gradient again.
+internal val DarkColors = darkColorScheme(
     primary = BrandOrange,
     onPrimary = Color.White,
     primaryContainer = BrandOrangeDark,
     onPrimaryContainer = Color.White,
     secondary = BrandOrangeSoft,
     onSecondary = DarkBg,
-    background = DarkBg,
+    // Bring the backdrop up to every screen: text surfaces carry their own fog, so the canvas can
+    // be quite translucent (GlassContrastTest checks canvas text over the brightest blob).
+    background = DarkBg.copy(alpha = CanvasAlphaDark),
     onBackground = TextPrimaryDark,
-    surface = DarkSurface,
+    surface = DarkSurface.copy(alpha = 0.88f),
     onSurface = TextPrimaryDark,
-    surfaceVariant = DarkSurfaceVariant,
+    surfaceVariant = DarkSurfaceVariant.copy(alpha = 0.86f),
     onSurfaceVariant = TextSecondaryDark,
     outline = DarkOutline,
 )
 
-private val LightColors = lightColorScheme(
+internal val LightColors = lightColorScheme(
     primary = BrandOrange,
     onPrimary = Color.White,
     primaryContainer = BrandOrangeSoft,
     onPrimaryContainer = LightBg,
     secondary = BrandOrangeDark,
     onSecondary = Color.White,
-    background = LightBg,
+    background = LightBg.copy(alpha = CanvasAlphaLight),
     onBackground = TextPrimaryLight,
-    surface = LightSurface,
+    surface = LightSurface.copy(alpha = 0.90f),
     onSurface = TextPrimaryLight,
-    surfaceVariant = LightSurfaceVariant,
+    surfaceVariant = LightSurfaceVariant.copy(alpha = 0.88f),
     onSurfaceVariant = TextSecondaryLight,
 )
 
@@ -45,6 +49,12 @@ fun JMReaderTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
+        // M3 Expressive hierarchy + shape scale. Both are wired here (and nowhere else) so every
+        // screen, including the ones that still look "old", inherits the new type scale at once -
+        // `MaterialTheme.typography.*` is used by 22 files, so this is the single highest-leverage
+        // change in the refactor. See Type.kt and Shapes.kt for the rationale per token.
+        typography = AppTypography,
+        shapes = AppShapes,
         content = content,
     )
 }

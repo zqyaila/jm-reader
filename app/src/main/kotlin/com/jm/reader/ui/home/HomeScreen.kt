@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +36,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,6 +54,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -64,14 +68,40 @@ import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.BottomNavReserve
+import com.jm.reader.ui.theme.GlassCapsule
+import com.jm.reader.ui.theme.glassClickable
+import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
-private data class HomeUiState(
+internal data class HomeUiState(
     val promote: List<ComicListItem> = emptyList(),
     val latest: List<ComicListItem> = emptyList(),
     val loading: Boolean = true,
     val error: String? = null,
 )
+
+/**
+ * Keeps the home feed alive while its navigation entry is on the back stack.
+ *
+ * Without this, opening a comic disposed the screen's composition and every `remember` went with
+ * it: coming back reloaded the feed from page 1 and jumped to the top. Switching tabs lost it the
+ * same way. The ViewModel store belongs to the `Routes.MAIN` entry, which stays put, so all four
+ * tabs keep their state - including while a detail screen sits on top of them.
+ */
+internal class HomeViewModel : ViewModel() {
+    val state = mutableStateOf(HomeUiState())
+    val page = mutableIntStateOf(1)
+    val endReached = mutableStateOf(false)
+    val loadingMore = mutableStateOf(false)
+
+    /** Set once the first page has been requested, so re-entering does not reload. */
+    var loaded = false
+
+    /** Last known scroll position, captured when the screen leaves composition. */
+    var firstVisibleIndex = 0
+    var firstVisibleOffset = 0
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -79,10 +109,11 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
     val repo = LocalRepository.current
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
-    var state by remember { mutableStateOf(HomeUiState()) }
-    var page by remember { mutableIntStateOf(1) }
-    var endReached by remember { mutableStateOf(false) }
-    var loadingMore by remember { mutableStateOf(false) }
+    val vm: HomeViewModel = viewModel()
+    var state by vm.state
+    var page by vm.page
+    var endReached by vm.endReached
+    var loadingMore by vm.loadingMore
 
     suspend fun loadInitial() {
         state = state.copy(loading = true, error = null)
@@ -119,9 +150,27 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
         loadingMore = false
     }
 
-    LaunchedEffect(Unit) { loadInitial() }
+    LaunchedEffect(Unit) {
+        // Keep the feed and the reader's scroll position when coming back from a comic (or from
+        // another tab) - unless the previous attempt failed, in which case re-entering retries.
+        if (vm.loaded && state.error == null) return@LaunchedEffect
+        vm.loaded = true
+        loadInitial()
+    }
 
-    val gridState = rememberLazyGridState()
+    // Seed from the last known position so switching tabs (which disposes this composition without
+    // a save/restore cycle) does not snap the feed back to the top. When returning from a comic the
+    // nav entry's own saved state wins and `init` is ignored, which is the same position anyway.
+    val gridState = rememberLazyGridState(
+        initialFirstVisibleItemIndex = vm.firstVisibleIndex,
+        initialFirstVisibleItemScrollOffset = vm.firstVisibleOffset,
+    )
+    DisposableEffect(gridState) {
+        onDispose {
+            vm.firstVisibleIndex = gridState.firstVisibleItemIndex
+            vm.firstVisibleOffset = gridState.firstVisibleItemScrollOffset
+        }
+    }
     LaunchedEffect(gridState) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { last ->
@@ -136,19 +185,19 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
             state.loading && state.latest.isEmpty() -> LoadingView()
             state.error != null && state.latest.isEmpty() -> ErrorView(state.error!!, onRetry = { scope.launch { loadInitial() } })
             else -> Column(Modifier.fillMaxSize()) {
-                // Search bar
+                // Search bar - one adaptive box, no 作品 / 作者 / ID chooser.
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .clickable { navController.navigate(Routes.SEARCH) }
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                        .glassClickable(shape = GlassCapsule) { navController.navigate(Routes.search()) }
+                        .glassSurface(shape = GlassCapsule, elevation = 4.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(
-                        s.searchComicHint,
+                        s.searchAdaptiveHint,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(start = 10.dp),
@@ -159,6 +208,9 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
                     state = gridState,
+                    // Bottom reserve lets the last row scroll clear of the floating glass nav pill
+                    // (and lets covers slide *under* it, which is what the backdrop blur samples).
+                    contentPadding = PaddingValues(bottom = BottomNavReserve),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -256,7 +308,10 @@ private fun QuickLinks(navController: NavHostController) {
                 Box(
                     Modifier
                         .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp)),
+                        .glassSurface(
+                            shape = RoundedCornerShape(12.dp),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary)

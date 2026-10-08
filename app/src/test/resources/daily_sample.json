@@ -1,0 +1,181 @@
+{
+  "daily_id": 73,
+  "three_days_coin": "150",
+  "three_days_exp": "150",
+  "seven_days_coin": "350",
+  "seven_days_exp": "350",
+  "event_name": "10月-「来都来了」",
+  "background_pc": "/media/logo/pc/10PC.jpg",
+  "background_phone": "/media/logo/phone/10PH.jpg",
+  "currentProgress": "0%",
+  "record": [
+    [
+      {
+        "date": "01",
+        "signed": false,
+        "bonus": true
+      },
+      {
+        "date": "02",
+        "signed": false,
+        "bonus": true
+      },
+      {
+        "date": "03",
+        "signed": false,
+        "bonus": true
+      },
+      {
+        "date": "04",
+        "signed": false,
+        "bonus": true
+      },
+      {
+        "date": "05",
+        "signed": false,
+        "bonus": true
+      },
+      {
+        "date": "06",
+        "signed": null,
+        "bonus": true
+      },
+      {
+        "date": "07",
+        "signed": null,
+        "bonus": true
+      }
+    ],
+    [
+      {
+        "date": "08",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "09",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "10",
+        "signed": null,
+        "bonus": true
+      },
+      {
+        "date": "11",
+        "signed": null,
+        "bonus": true
+      },
+      {
+        "date": "12",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "13",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "14",
+        "signed": null,
+        "bonus": false
+      }
+    ],
+    [
+      {
+        "date": "15",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "16",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "17",
+        "signed": null,
+        "bonus": true
+      },
+      {
+        "date": "18",
+        "signed": null,
+        "bonus": true
+      },
+      {
+        "date": "19",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "20",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "21",
+        "signed": null,
+        "bonus": false
+      }
+    ],
+    [
+      {
+        "date": "22",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "23",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "24",
+        "signed": null,
+        "bonus": true
+      },
+      {
+        "date": "25",
+        "signed": null,
+        "bonus": true
+      },
+      {
+        "date": "26",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "27",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "28",
+        "signed": null,
+        "bonus": false
+      }
+    ],
+    [
+      {
+        "date": "29",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "30",
+        "signed": null,
+        "bonus": false
+      },
+      {
+        "date": "31",
+        "signed": null,
+        "bonus": true
+      }
+    ]
+  ],
+  "makeup_used": 0,
+  "makeup_limit": 5,
+  "makeup_available": true
+}
