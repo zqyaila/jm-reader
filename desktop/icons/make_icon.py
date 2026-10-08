@@ -17,6 +17,23 @@ That is a one-pixel feather evaluated on a 4x supersampled canvas (1024px), whic
 box-downsampled into every ICO entry (256/128/64/48/32/16). The 4x buffer is what makes the
 16px entry still legible instead of a grey smudge.
 
+How the entries are encoded
+---------------------------
+An .ico is a container: the directory lists one blob per size, and each blob is *either* a
+BMP/DIB *or* an embedded PNG stream. PNG-in-ICO is a Windows Vista addition, and the
+convention every real icon editor follows is to use it **only for the 256px entry** - the
+one where a 32bpp bitmap would cost ~262KB uncompressed. Small sizes are stored as DIBs,
+because that is what pre-Vista code paths and a number of install/packaging tools expect.
+
+That split is not cosmetic here: `jpackage` (which builds the Windows installers, see
+desktop/build.gradle.kts) and the WiX tools it drives both read this file, and a PNG blob
+at 16/32/48/128 is outside what they were written against. So: DIB for 16..128, PNG for 256.
+
+The DIB flavour used inside an ICO has no BITMAPFILEHEADER - the payload starts straight at
+BITMAPINFOHEADER, `biHeight` is **doubled** (XOR image on top, then the 1bpp AND mask), and
+rows are stored bottom-up. For a 32bpp entry the AND mask is redundant (the alpha channel
+carries transparency) but is still written, zeroed, because the stride layout requires it.
+
 Usage
 -----
     python make_icon.py            # writes ./jmreader.ico next to this file
@@ -212,6 +229,46 @@ def encode_png(rgba: bytearray, size: int) -> bytes:
     )
 
 
+def encode_dib(rgba: bytearray, size: int) -> bytes:
+    """Encode an RGBA buffer as the ICO flavour of a BMP: BITMAPINFOHEADER, then the 32bpp
+    BGRA XOR image bottom-up, then the 1bpp AND mask. Used for every size below 256."""
+    stride = size * 4
+    xor = bytearray(stride * size)
+    for y in range(size):
+        src = y * stride
+        dst = (size - 1 - y) * stride  # DIBs store rows bottom-to-top
+        for x in range(size):
+            o = src + x * 4
+            d = dst + x * 4
+            xor[d] = rgba[o + 2]      # B
+            xor[d + 1] = rgba[o + 1]  # G
+            xor[d + 2] = rgba[o]      # R
+            xor[d + 3] = rgba[o + 3]  # A
+
+    # 1bpp AND mask, each row padded to 4 bytes. All zero: alpha does the work in 32bpp.
+    mask_stride = ((size + 31) // 32) * 4
+    mask = bytes(mask_stride * size)
+
+    header = struct.pack(
+        "<IiiHHIIiiII",
+        40,                    # biSize
+        size,                  # biWidth
+        size * 2,              # biHeight: XOR + AND stacked
+        1,                     # biPlanes
+        32,                    # biBitCount
+        0,                     # biCompression: BI_RGB
+        len(xor) + len(mask),  # biSizeImage
+        0, 0,                  # biXPelsPerMeter, biYPelsPerMeter
+        0, 0,                  # biClrUsed, biClrImportant
+    )
+    return header + bytes(xor) + mask
+
+
+# The size whose entry stays PNG-compressed. Everything smaller is a DIB; see the module
+# docstring for why.
+PNG_SIZE_THRESHOLD = 256
+
+
 def build_ico(sizes: list[int]) -> bytes:
     master = render_master()
     entries: list[bytes] = []
@@ -220,13 +277,13 @@ def build_ico(sizes: list[int]) -> bytes:
 
     for s in sizes:
         rgba = master if s == S else downsample(master, S, s)
-        png = encode_png(rgba, s)
+        payload = encode_png(rgba, s) if s >= PNG_SIZE_THRESHOLD else encode_dib(rgba, s)
         dim = 0 if s >= 256 else s  # 0 means 256 in the ICO directory
         entries.append(
-            struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(png), offset)
+            struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(payload), offset)
         )
-        payloads.append(png)
-        offset += len(png)
+        payloads.append(payload)
+        offset += len(payload)
 
     header = struct.pack("<HHH", 0, 1, len(sizes))
     return header + b"".join(entries) + b"".join(payloads)

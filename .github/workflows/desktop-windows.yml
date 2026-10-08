@@ -67,21 +67,38 @@ jobs:
             "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
 
-      # Records what the linker will actually use. An image that ships a modern WiX *and* a stale
-      # 3.x directory on PATH produces a toolchain that half-works, and this is the only place the
-      # versions are visible when that happens.
-      - name: Report toolchain
+      # jpackage locates WiX by scanning PATH. The Compose plugin does *not* consult PATH when
+      # deciding where WiX is: it downloads the pinned wix3112rtm release (2019, .NET Framework
+      # 3.5 era - see its task :downloadWix, which runs in this build) and prepends that
+      # directory to PATH for the jpackage child process, shadowing the newer WiX the runner
+      # image already ships. Setting WIX_PATH makes the plugin skip the download and hand
+      # jpackage the toolchain verified here instead, so "which WiX actually ran" stops being a
+      # variable. The plugin reads WIX_PATH at configuration time, so it must be exported
+      # before Gradle starts.
+      - name: Pin and report the WiX toolchain
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Continue'
+          $dirs = @()
           foreach ($tool in 'candle.exe', 'light.exe') {
             $cmd = Get-Command $tool -ErrorAction SilentlyContinue
-            if ($cmd) {
-              Write-Host "$tool -> $($cmd.Source)"
-              # WiX prints its version as the first line of its usage text.
-              & $cmd.Source '-?' 2>&1 | Select-Object -First 3 | ForEach-Object { Write-Host "    $_" }
-            } else {
+            if (-not $cmd) {
               Write-Host "::warning::$tool is not on PATH"
+              continue
             }
+            $dirs += Split-Path -Parent $cmd.Source
+            Write-Host "$tool -> $($cmd.Source)"
+            # WiX prints its version as the first line of its usage text.
+            & $cmd.Source '-?' 2>&1 | Select-Object -First 2 | ForEach-Object { Write-Host "    $_" }
+          }
+          $unique = @($dirs | Sort-Object -Unique)
+          if ($dirs.Count -eq 2 -and $unique.Count -eq 1) {
+            # UTF-8 without a BOM - the runner parses this file line by line.
+            [System.IO.File]::AppendAllText(
+              $env:GITHUB_ENV, "WIX_PATH=$($unique[0])`n", [System.Text.UTF8Encoding]::new($false))
+            Write-Host "WIX_PATH pinned to $($unique[0])"
+          } else {
+            Write-Host "::warning::cannot pin WIX_PATH (candle/light missing, or in different dirs) - the Compose plugin will download its own WiX 3.11"
           }
           Write-Host "JAVA_HOME = $env:JAVA_HOME"
           Write-Host "JAVA_TOOL_OPTIONS = $env:JAVA_TOOL_OPTIONS"
@@ -119,41 +136,109 @@ jobs:
 
       # Gradle never explains a jpackage failure: the whole message is
       #   "External tool execution failed ... Exit code: 1"
-      # pointing at log files that live in the build directory. This step reads them, prints them,
-      # and re-emits the tail as a workflow annotation - so the real cause lands in the run summary
-      # (and the Checks API) instead of staying buried in a log that requires a signed-in session.
+      # pointing at log files that live in the build directory. jpackage's own stderr is the only
+      # place the cause appears, so it is surfaced FIRST, on its own annotation: annotations land in
+      # the run summary and the Checks API, both readable without a signed-in session, which the
+      # step log is not. Everything after it is context.
       - name: Packaging diagnostics
         if: failure()
         shell: pwsh
         run: |
-          $lines = New-Object System.Collections.Generic.List[string]
+          $ErrorActionPreference = 'Continue'
+          $root = 'desktop\build\compose'
 
-          # Tail of the Gradle output: the "What went wrong" block, which names the failing task,
-          # the jpackage command line and the paths of the logs jpackage wrote.
-          if (Test-Path packaging.log) {
-            $lines.Add('===== tail of packaging.log =====')
-            Get-Content packaging.log -Tail 120 | ForEach-Object { $lines.Add([string]$_) }
+          # Command properties are comma separated, so the titles below contain no commas.
+          function Write-Annotation([string]$title, [string[]]$lines) {
+            $body = ($lines -join "`n")
+            if ($body.Length -gt 6000) {
+              # Keep both ends: the head carries the top-level error, the tail the tool's stderr.
+              $body = $body.Substring(0, 2000) + "`n[... truncated ...]`n" + $body.Substring($body.Length - 3800)
+            }
+            $body = $body.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
+            Write-Host "::error title=$title::$body"
           }
 
-          # jpackage's own stdout/stderr plus the generated WiX source, and the exact argument file
-          # the plugin passed (@...\tmp\packageMsi.args.txt). Between them these say which tool
-          # failed and why.
-          Get-ChildItem -Path desktop\build\compose -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Extension -in '.txt', '.log', '.wxs' } |
-            ForEach-Object {
-              $lines.Add("===== $($_.FullName) =====")
-              Get-Content -LiteralPath $_.FullName -TotalCount 300 -ErrorAction SilentlyContinue |
-                ForEach-Object { $lines.Add([string]$_) }
+          # Emits one line at a time so callers can pipe it straight into a List[string].Add.
+          function Read-Head([string]$path, [int]$max) {
+            if (-not (Test-Path -LiteralPath $path)) { "<missing: $path>"; return }
+            Get-Content -LiteralPath $path -TotalCount $max -ErrorAction SilentlyContinue |
+              ForEach-Object { [string]$_ }
+          }
+
+          # --- 1. jpackage's own stderr. This is the answer. -----------------------------
+          # The plugin writes it to logs\<task>\jpackage-<timestamp>-err.txt. The unpacked JRE image
+          # under tmp\main\runtime is thousands of irrelevant files, so it is excluded outright.
+          $errFiles = @(Get-ChildItem -Path $root -Recurse -File -Filter '*-err.txt' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\runtime\\' })
+          Write-Host "jpackage stderr logs found: $($errFiles.Count)"
+
+          $primary = New-Object System.Collections.Generic.List[string]
+          foreach ($f in $errFiles) {
+            $primary.Add("===== $($f.FullName) ($($f.Length) bytes) =====")
+            Read-Head $f.FullName 400 | ForEach-Object { $primary.Add($_) }
+          }
+          if ($primary.Count -eq 0) {
+            $primary.Add('jpackage wrote no stderr log - the failure was not raised inside jpackage.')
+          }
+          $primary | ForEach-Object { Write-Host $_ }
+          Write-Annotation 'jpackage stderr' $primary.ToArray()
+
+          # --- 2. Context: what was asked for, what was generated, what toolchain exists. --
+          $context = New-Object System.Collections.Generic.List[string]
+          $context.Add('--- jpackage argument files (what the plugin actually asked for) ---')
+          $argFiles = @(Get-ChildItem -Path $root -Recurse -File -Filter '*.args.txt' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\runtime\\' })
+          foreach ($f in $argFiles) {
+            $context.Add("===== $($f.FullName) =====")
+            Read-Head $f.FullName 200 | ForEach-Object { $context.Add($_) }
+          }
+
+          $context.Add('--- generated WiX sources ---')
+          $wxs = @(Get-ChildItem -Path $root -Recurse -File -Filter '*.wxs' -ErrorAction SilentlyContinue)
+          if ($wxs.Count -eq 0) {
+            $context.Add('(none under desktop\build\compose - jpackage writes them into its own temp dir)')
+          }
+          foreach ($f in $wxs) {
+            $context.Add("===== $($f.FullName) ($($f.Length) bytes) =====")
+            Read-Head $f.FullName 120 | ForEach-Object { $context.Add($_) }
+          }
+
+          $context.Add('--- toolchain visible to jpackage ---')
+          $context.Add("WIX_PATH = " + [Environment]::GetEnvironmentVariable('WIX_PATH'))
+          foreach ($tool in 'candle.exe', 'light.exe', 'heat.exe') {
+            $cmd = Get-Command $tool -ErrorAction SilentlyContinue
+            $where = if ($cmd) { $cmd.Source } else { 'NOT ON PATH' }
+            $context.Add("$tool -> $where")
+          }
+          $wixOnPath = @(($env:PATH -split ';') | Where-Object { $_ -match 'wix' })
+          $context.Add('PATH entries mentioning wix: ' + $(if ($wixOnPath.Count) { $wixOnPath -join ' | ' } else { '(none)' }))
+          # When WIX_PATH is unset the plugin unzips its own wix311 under the root build dir; if that
+          # ends up with a nested wix311-binaries\ level, PATH never sees candle.exe.
+          foreach ($d in 'build\wix311', 'wix311') {
+            if (Test-Path -LiteralPath $d) {
+              $exes = @(Get-ChildItem -Path $d -Recurse -File -Filter '*.exe' -ErrorAction SilentlyContinue | Select-Object -First 8)
+              $rel = @($exes | ForEach-Object { $_.FullName.Substring((Resolve-Path -LiteralPath $d).Path.Length) })
+              $context.Add("$d exists; executables: " + $(if ($rel.Count) { $rel -join ', ' } else { '(none)' }))
+            } else {
+              $context.Add("$d does not exist")
             }
+          }
+          $context | ForEach-Object { Write-Host $_ }
+          Write-Annotation 'jpackage context' $context.ToArray()
 
-          if ($lines.Count -eq 0) { $lines.Add('no packaging logs found under desktop\build\compose') }
-          $lines | ForEach-Object { Write-Host $_ }
+          # --- 3. Tail of the Gradle output, which names the failing task. ----------------
+          $gradle = New-Object System.Collections.Generic.List[string]
+          if (Test-Path packaging.log) {
+            $gradle.Add('===== tail of packaging.log =====')
+            Get-Content packaging.log -Tail 80 | ForEach-Object { $gradle.Add([string]$_) }
+          } else {
+            $gradle.Add('packaging.log not found')
+          }
+          $gradle | ForEach-Object { Write-Host $_ }
+          Write-Annotation 'gradle output tail' $gradle.ToArray()
 
-          # Annotations are size limited; keep the tail, which is where the error is.
-          $body = ($lines -join "`n")
-          if ($body.Length -gt 6000) { $body = $body.Substring($body.Length - 6000) }
-          $body = $body.Replace('%', '%25').Replace("`r", '').Replace("`n", '%0A')
-          Write-Host "::error title=jpackage failure detail::$body"
+          # Diagnostics must never themselves become the thing that obscures a run.
+          exit 0
 
       - name: Upload packaging logs
         if: failure()
