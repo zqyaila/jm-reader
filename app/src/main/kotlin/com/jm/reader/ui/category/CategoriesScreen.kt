@@ -24,6 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.jm.reader.data.model.Category
 import com.jm.reader.data.repo.RepoResult
@@ -37,17 +39,40 @@ import com.jm.reader.ui.theme.GlassShape
 import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
+/**
+ * Keeps the category list while the tab's navigation entry is on the back stack, so returning
+ * from a comic (or switching tabs and back) does not clear it and re-fetch from scratch.
+ */
+internal class CategoriesViewModel : ViewModel() {
+    val categories = mutableStateOf<List<Category>>(emptyList())
+    val loading = mutableStateOf(true)
+    val error = mutableStateOf<String?>(null)
+    val reloadKey = mutableStateOf(0)
+
+    /** Set once the list has been requested, so re-entering does not blank it out and reload. */
+    var loaded = false
+
+    /** The `reloadKey` value the current list was fetched for; a new one means a real retry. */
+    var lastLoadedKey = 0
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CategoriesScreen(navController: NavHostController, modifier: Modifier = Modifier) {
     val repo = LocalRepository.current
     val s = LocalAppStrings.current
-    var categories by remember { mutableStateOf<List<Category>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var reloadKey by remember { mutableStateOf(0) }
+    val vm: CategoriesViewModel = viewModel()
+    var categories by vm.categories
+    var loading by vm.loading
+    var error by vm.error
+    var reloadKey by vm.reloadKey
 
     LaunchedEffect(reloadKey) {
+        // Only load on the first entry, when the reader asked for a retry (`reloadKey++`), or when
+        // the previous attempt failed. Re-entering the tab must not blank the list and re-fetch it.
+        if (vm.loaded && reloadKey == vm.lastLoadedKey && error == null) return@LaunchedEffect
+        vm.loaded = true
+        vm.lastLoadedKey = reloadKey
         loading = true
         when (val r = repo.categories()) {
             is RepoResult.Ok -> { categories = r.data; error = null }

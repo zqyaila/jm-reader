@@ -1,6 +1,5 @@
 package com.jm.reader.ui.novels
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,7 +51,8 @@ import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
-import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.GlassShape
+import com.jm.reader.ui.theme.glassClickable
 import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
@@ -117,8 +117,8 @@ private fun NovelRow(novel: NovelItem, repo: com.jm.reader.data.repo.AppReposito
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 5.dp)
-            .glassSurface(shape = GlassShapeSmall)
-            .clickable(onClick = onClick)
+            .glassClickable(shape = GlassShape, onClick = onClick)
+            .glassSurface(shape = GlassShape)
             .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(10.dp),

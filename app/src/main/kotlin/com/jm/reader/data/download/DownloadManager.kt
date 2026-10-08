@@ -11,13 +11,19 @@ import android.provider.MediaStore
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.util.ImageDescrambler
+import com.jm.reader.data.model.ReadPage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,15 +33,27 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * One-tap comic downloader.
  *
  * Downloads every page of every chapter of an album, restores JMComic's scrambled images,
- * and writes plain JPEGs to the user's Downloads/JMReader/<albumId>/ folder (MediaStore on
+ * and writes them to the user's Downloads/JMReader/<albumId>/ folder (MediaStore on
  * API 29+, public downloads dir on older APIs). A small in-app index persists which albums
  * were downloaded. Downloads run on the IO dispatcher, admit only one job per album, are
  * cancellable via [deleteAlbum], and never mark an album complete if any page failed.
+ *
+ * Pages are fetched [PAGE_PARALLELISM] at a time rather than one by one - the image CDN is the
+ * bottleneck, so overlapping requests is what makes a big album finish quickly.
+ *
+ * **Why the files are named `…jpg.jm` and not `…jpg`:** a JPEG sitting in Downloads is picked up
+ * by the system media scanner and turns up in every gallery app, which buries the user's real
+ * photos under hundreds of comic pages. Giving the file an extension the scanner does not
+ * recognise as an image (and inserting it with [GENERIC_MIME] rather than `image/jpeg`) keeps it
+ * out of the gallery while leaving it a completely ordinary JPEG that this app still reads.
+ * Files downloaded by older versions keep their plain `.jpg` name and are still listed - see
+ * [isPageFile].
  */
 class DownloadManager(
     private val context: Context,
@@ -108,38 +126,59 @@ class DownloadManager(
                 listOf(albumId)
             }
 
-            // Per-chapter read payloads: (chapterId, scrambleId, pages)
-            val chapters = mutableListOf<Triple<String, Long, List<com.jm.reader.data.model.ReadPage>>>()
-            for (cid in chapterIds) {
-                val read = when (val r = repository.comicRead(cid)) {
-                    is RepoResult.Ok -> r.data
-                    is RepoResult.Err -> throw IllegalStateException(r.message)
-                }
-                chapters.add(Triple(read.id, read.scrambleId, read.images))
+            // Per-chapter read payloads: (chapterId, scrambleId, pages). Fetched concurrently -
+            // a 40-chapter album would otherwise make 40 sequential round trips before the first
+            // page is even requested.
+            val chapters: List<Triple<String, Long, List<ReadPage>>> = coroutineScope {
+                chapterIds.map { cid ->
+                    async {
+                        when (val r = repository.comicRead(cid)) {
+                            is RepoResult.Ok -> Triple(r.data.id, r.data.scrambleId, r.data.images)
+                            is RepoResult.Err -> throw IllegalStateException(r.message)
+                        }
+                    }
+                }.awaitAll()
             }
             val totalPages = chapters.sumOf { it.third.size }
             if (totalPages == 0) throw IllegalStateException("no pages")
 
-            var done = 0
-            var failed = false
-            outer@ for ((ci, ch) in chapters.withIndex()) {
-                val cid = ch.first
-                val scrambleId = ch.second
-                for ((pi, page) in ch.third.withIndex()) {
-                    if (cancelFlags[albumId] == true) {
-                        failed = true
-                        break@outer
-                    }
-                    val name = "%02d_%03d".format(ci + 1, page.page)
-                    val saved = savePage(albumId, name, page.image, cid.toLongOrNull() ?: 0L, scrambleId)
-                    done++
-                    _downloading.update { it + (albumId to Progress(albumId, done, totalPages, "downloading")) }
-                    if (!saved) {
-                        failed = true
-                        break@outer
-                    }
+            // One task per page. The file name carries the chapter and page number, so the order
+            // the tasks happen to finish in has no effect on what lands on disk.
+            val tasks = chapters.flatMapIndexed { ci, ch ->
+                ch.third.map { page ->
+                    PageTask(
+                        name = "%02d_%03d".format(ci + 1, page.page),
+                        url = page.image,
+                        aid = ch.first.toLongOrNull() ?: 0L,
+                        scrambleId = ch.second,
+                    )
                 }
             }
+
+            val completed = AtomicInteger(0)
+            val outcomes: List<Boolean> = coroutineScope {
+                val gate = Semaphore(PAGE_PARALLELISM)
+                tasks.map { task ->
+                    async {
+                        gate.withPermit {
+                            var ok = false
+                            var attempt = 0
+                            // A retry matters more here than before: pages now contend for
+                            // bandwidth, so a transient failure is likelier.
+                            while (!ok && attempt < PAGE_ATTEMPTS && cancelFlags[albumId] != true) {
+                                attempt++
+                                ok = savePage(albumId, task.name, task.url, task.aid, task.scrambleId)
+                            }
+                            val n = completed.incrementAndGet()
+                            _downloading.update {
+                                it + (albumId to Progress(albumId, n, totalPages, "downloading"))
+                            }
+                            ok
+                        }
+                    }
+                }.awaitAll()
+            }
+            val failed = outcomes.any { !it } || cancelFlags[albumId] == true
 
             cancelFlags.remove(albumId)
             when {
@@ -162,7 +201,10 @@ class DownloadManager(
                 }
             }
         } catch (e: Exception) {
-            cancelFlags.remove(albumId)
+            // Capture the flag before clearing it: a cancelled job can leave half an album on
+            // disk, and the index never marked it complete, so the files go too.
+            val cancelled = cancelFlags.remove(albumId) == true
+            if (cancelled) cleanupAlbum(albumId)
             _downloading.update { it + (albumId to Progress(albumId, 0, 1, "failed", e.message)) }
         }
         ok
@@ -199,12 +241,14 @@ class DownloadManager(
                     resolver.delete(
                         MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                         "${MediaStore.MediaColumns.RELATIVE_PATH} = ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
-                        arrayOf(selectionPath(albumId), "$name.jpg"),
+                        arrayOf(selectionPath(albumId), downloadPageName(name)),
                     )
                 }
                 val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.DISPLAY_NAME, "$name.jpg")
-                    put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, downloadPageName(name))
+                    // Deliberately NOT "image/jpeg": MediaStore files anything with an image MIME
+                    // as a picture, which is what made downloads show up in the gallery.
+                    put(MediaStore.MediaColumns.MIME_TYPE, PAGE_MIME)
                     put(MediaStore.MediaColumns.RELATIVE_PATH, selectionPath(albumId))
                     put(MediaStore.MediaColumns.IS_PENDING, 1)
                 }
@@ -228,7 +272,7 @@ class DownloadManager(
                     "JMReader/$albumId",
                 )
                 if (!dir.exists()) dir.mkdirs()
-                val f = File(dir, "$name.jpg")
+                val f = File(dir, downloadPageName(name))
                 FileOutputStream(f).use { out -> bmp.compress(Bitmap.CompressFormat.JPEG, 92, out) }
                 true
             }
@@ -252,6 +296,8 @@ class DownloadManager(
                     val nameCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
                     while (c.moveToNext()) {
                         val name = c.getString(nameCol) ?: ""
+                        // Only page files, so anything else that lands in the folder is ignored.
+                        if (!isDownloadedPageFile(name)) continue
                         val id = c.getLong(idCol)
                         uris.add(name to Uri.withAppendedPath(collection, id.toString()))
                     }
@@ -263,7 +309,10 @@ class DownloadManager(
                     "JMReader/$albumId",
                 )
                 if (!dir.exists()) return emptyList()
-                dir.listFiles()?.filter { it.name.endsWith(".jpg") }?.sortedBy { it.name }?.map { Uri.fromFile(it) }
+                dir.listFiles()
+                    ?.filter { it.isFile && isDownloadedPageFile(it.name) }
+                    ?.sortedBy { it.name }
+                    ?.map { Uri.fromFile(it) }
                     ?: emptyList()
             }
         } catch (_: Exception) {
@@ -326,6 +375,71 @@ class DownloadManager(
         } catch (_: Exception) {
         }
         removeIndex(albumId)
+    }
+
+    /**
+     * One-off re-filing of albums downloaded before pages were named `…jpg.jm`.
+     *
+     * Those files are plain `.jpg` and so still fill the gallery. Rather than making the reader
+     * delete and re-download the lot, the existing entries are renamed in place: on API 29+
+     * MediaProvider performs a `DISPLAY_NAME`/`MIME_TYPE` update as a rename of the underlying
+     * file, so no image data is rewritten. Album folders downloaded on older APIs are renamed
+     * directly.
+     *
+     * Runs at most once, and is entirely best-effort: anything that fails keeps its old name,
+     * which [isDownloadedPageFile] still accepts, so the offline reader is unaffected either way.
+     */
+    suspend fun migrateLegacyDownloads() = withContext(Dispatchers.IO) {
+        if (prefs.getBoolean(KEY_LEGACY_MIGRATED, false)) return@withContext
+        val ok = runCatching {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val resolver = context.contentResolver
+                val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                val projection = arrayOf(
+                    MediaStore.MediaColumns._ID,
+                    MediaStore.MediaColumns.DISPLAY_NAME,
+                )
+                val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? " +
+                    "AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+                // Only this app's own folder, and only names that still end in .jpg.
+                val args = arrayOf("Download/JMReader/%", "%$PAGE_IMAGE_EXT")
+                resolver.query(collection, projection, selection, args, null)?.use { c ->
+                    val idCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                    val nameCol = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+                    while (c.moveToNext()) {
+                        val name = c.getString(nameCol) ?: continue
+                        val uri = Uri.withAppendedPath(collection, c.getLong(idCol).toString())
+                        runCatching {
+                            resolver.update(
+                                uri,
+                                ContentValues().apply {
+                                    put(MediaStore.MediaColumns.DISPLAY_NAME, downloadPageName(name.removeSuffix(PAGE_IMAGE_EXT)))
+                                    put(MediaStore.MediaColumns.MIME_TYPE, PAGE_MIME)
+                                },
+                                null,
+                                null,
+                            )
+                        }
+                    }
+                }
+            } else {
+                val root = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "JMReader",
+                )
+                root.listFiles()?.forEach { albumDir ->
+                    albumDir.listFiles()
+                        ?.filter { it.isFile && it.name.endsWith(PAGE_IMAGE_EXT) }
+                        ?.forEach { f ->
+                            runCatching {
+                                f.renameTo(File(f.parentFile, downloadPageName(f.name.removeSuffix(PAGE_IMAGE_EXT))))
+                            }
+                        }
+                }
+            }
+        }.isSuccess
+        // Only latch on success, so a transient failure is retried on the next launch.
+        if (ok) prefs.edit().putBoolean(KEY_LEGACY_MIGRATED, true).apply()
     }
 
     // -----------------------------------------------------------------------
@@ -396,5 +510,51 @@ class DownloadManager(
 
     private companion object {
         const val MAX_SAVE_DIM = 2560
+
+        /**
+         * Pages fetched at once. Kept deliberately small: each in-flight page holds a decoded
+         * bitmap (up to ~26 MB for a 2560x2560 page), and descrambling briefly holds two, so a
+         * higher number buys little throughput while risking an OOM on a modest device.
+         */
+        const val PAGE_PARALLELISM = 3
+
+        /** Attempts per page (1 try + 1 retry) before the album is declared failed. */
+        const val PAGE_ATTEMPTS = 2
+
+        const val KEY_LEGACY_MIGRATED = "legacyNamingMigrated"
     }
 }
+
+/** Extension of the JPEG stored on disk. */
+internal const val PAGE_IMAGE_EXT = ".jpg"
+
+/**
+ * Marker appended after the image extension, e.g. `01_001.jpg.jm`.
+ *
+ * The media scanner classifies a file by its extension, so a name that no longer *ends* in an
+ * image extension is not indexed as a picture - which is how these stay out of the gallery.
+ */
+internal const val GALLERY_HIDDEN_SUFFIX = ".jm"
+
+/** MIME the pages are registered under, so MediaStore does not file them as pictures. */
+internal const val PAGE_MIME = "application/octet-stream"
+
+/** On-disk name of one page, e.g. `01_001` -> `01_001.jpg.jm`. */
+internal fun downloadPageName(base: String): String = "$base$PAGE_IMAGE_EXT$GALLERY_HIDDEN_SUFFIX"
+
+/**
+ * True for a page this app wrote.
+ *
+ * Both the current hidden name and the plain `.jpg` written by earlier versions count, so albums
+ * downloaded before the rename still open instead of reading as empty.
+ */
+internal fun isDownloadedPageFile(fileName: String): Boolean =
+    fileName.endsWith(GALLERY_HIDDEN_SUFFIX) || fileName.endsWith(PAGE_IMAGE_EXT)
+
+/** One page to fetch: its output name and everything [DownloadManager.savePage] needs. */
+private data class PageTask(
+    val name: String,
+    val url: String,
+    val aid: Long,
+    val scrambleId: Long,
+)

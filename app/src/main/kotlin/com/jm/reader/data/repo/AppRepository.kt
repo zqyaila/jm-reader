@@ -5,6 +5,8 @@ import com.jm.reader.data.model.Category
 import com.jm.reader.data.model.CategoryRef
 import com.jm.reader.data.model.ComicDetail
 import com.jm.reader.data.model.ComicListItem
+import com.jm.reader.data.model.CommentItem
+import com.jm.reader.data.model.CommentPage
 import com.jm.reader.data.model.ForumItem
 import com.jm.reader.data.model.GameItem
 import com.jm.reader.data.model.Member
@@ -17,6 +19,7 @@ import com.jm.reader.data.model.int
 import com.jm.reader.data.model.long
 import com.jm.reader.data.model.obj
 import com.jm.reader.data.model.objList
+import com.jm.reader.data.model.parseDailyRecord
 import com.jm.reader.data.model.str
 import com.jm.reader.data.model.strList
 import com.jm.reader.data.model.strOrNull
@@ -61,6 +64,12 @@ data class DailyCheckResult(
     val message: String?,
 )
 
+/** One page of a paged comic list that also reports how many rows exist in total. */
+data class HistoryPage(
+    val total: Int = 0,
+    val items: List<ComicListItem> = emptyList(),
+)
+
 /**
  * Thin wrapper over [ApiClient] exposing typed methods for every feature used by the app.
  * Ads, coin purchases and recharge flows are intentionally NOT exposed here.
@@ -83,6 +92,15 @@ class AppRepository(
         /** Gender values the mobile `/register` endpoint expects (see JMComic-qt `RegisterReq`). */
         const val GENDER_MALE = "Male"
         const val GENDER_FEMALE = "Female"
+
+        /**
+         * `mode` that scopes `/forum` to a single album's comments (reference client:
+         * `CommentWidget.readMode[1]`). The other scopes are "all" and "chat".
+         */
+        const val COMMENT_MODE_ALBUM = "manhua"
+
+        /** `folder_id` that means "every folder" (`GetFavoritesReq2` in the reference client). */
+        const val FAVORITE_FOLDER_ALL = "0"
     }
 
     // -----------------------------------------------------------------------
@@ -208,6 +226,35 @@ class AppRepository(
     /** POST /daily_list/filter {data} */
     suspend fun dailyListFilter(data: String): RepoResult<JSONObject> =
         api.post("daily_list/filter", mapOf("data" to data)).toRepoObj()
+
+    /**
+     * Signs in for today, unless the account has already done so.
+     *
+     * Used at launch so the reader never loses a day. It is **idempotent without any local state**:
+     * `GET /daily` reports whether today is already signed (`signedToday`), so a repeat launch
+     * simply finds nothing to do instead of relying on a stored "last check-in" date that could
+     * drift out of sync with the server.
+     *
+     * Returns the server's message when a check-in was actually submitted, or null when there was
+     * nothing to do (logged out, already signed, or the daily config could not be read).
+     */
+    suspend fun autoDailyCheck(): String? {
+        val id = uid ?: return null
+        val daily = getDaily(id)
+        if (daily !is RepoResult.Ok) return null
+        val record = parseDailyRecord(daily.data)
+        if (record.signedToday || record.dailyId.isBlank()) return null
+        return when (val r = dailyCheck(id, record.dailyId)) {
+            is RepoResult.Ok -> r.data.message
+            is RepoResult.Err -> null
+        }
+    }
+
+    /** The signed-in member's uid, or null when nobody is logged in. */
+    val uid: String?
+        get() = session.memberJson
+            ?.let { json -> runCatching { JSONObject(json).str("uid") }.getOrNull() }
+            ?.takeIf { it.isNotBlank() }
 
     // -----------------------------------------------------------------------
     // Search / tags / categories
@@ -446,15 +493,30 @@ class AppRepository(
     // Library / favorites / history / likes
     // -----------------------------------------------------------------------
 
-    /** GET /favorite?page=&folder_id=&o= (o: "mr" favorite time / "mp" update time). */
-    suspend fun favorites(page: Int, folderId: String = "", o: String = "mr"): RepoResult<List<ComicListItem>> =
+    /**
+     * GET /favorite?page=&folder_id=&o= (o: "mr" favorite time / "mp" update time).
+     *
+     * [folderId] must not be blank. `folder_id` is how the server picks which collection to list,
+     * and the API client drops empty query params - so an empty default sent **no** `folder_id` at
+     * all, which is why the library's favorites tab could come back empty even with favorites
+     * saved. The reference client (`GetFavoritesReq2`) explicitly sends `"0"` for "everything".
+     */
+    suspend fun favorites(page: Int, folderId: String = FAVORITE_FOLDER_ALL, o: String = "mr"): RepoResult<List<ComicListItem>> =
         api.get("favorite", mapOf("page" to page, "folder_id" to folderId, "o" to o)).toRepoList { o2, arr ->
             listFromObjOrArr(o2, arr)
         }
 
-    /** POST /favorite {aid} */
-    suspend fun addFavorite(aid: String): RepoResult<JSONObject> =
-        api.post("favorite", mapOf("aid" to aid)).toRepoObj()
+    /**
+     * POST /favorite {aid} - toggles the album in the account's favorites.
+     *
+     * Reported as an acknowledgement rather than a payload: the endpoint answers
+     * `{"code":200,"data":[]}` on success, and the old `toRepoObj()` mapping treated a missing
+     * object as `noData` - so a favourite that *did* save looked like a failure. Callers ignored
+     * the result and re-fetched the album instead, which is why the heart only turned red after a
+     * manual refresh.
+     */
+    suspend fun addFavorite(aid: String): RepoResult<Unit> =
+        api.post("favorite", mapOf("aid" to aid)).toRepoAck()
 
     /** POST /favorite_folder - create/edit/delete favorite folders. */
     suspend fun editFavoriteFolder(type: String, folderId: String? = null, folderName: String? = null, aid: String? = null): RepoResult<JSONObject> {
@@ -485,9 +547,30 @@ class AppRepository(
     // History (watch list)
     // -----------------------------------------------------------------------
 
-    /** GET /watch_list?page= */
+    /** GET /watch_list?page= - raw response, kept for callers that want the envelope. */
     suspend fun watchList(page: Int): RepoResult<JSONObject> =
         api.get("watch_list", mapOf("page" to page)).toRepoObj()
+
+    /**
+     * GET /watch_list?page= - the account's viewing history, newest first.
+     *
+     * This is the *cloud* half of the history tab: `addWatch` writes to it whenever a logged-in
+     * reader opens a chapter, but nothing used to read it back, which is why cloud history looked
+     * empty. The payload is `{"list": [<album>, …], "total": <int>}` with the same album shape as
+     * `/latest` (reference client: `GetHistoryReq2` → `ToolUtil.ParseHistoryReq2`), so
+     * [ComicListItem] parses it directly.
+     *
+     * Requires a logged-in session - an anonymous call answers
+     * `HTTP 401 / code 401 / errorMsg "Authentication fail."`.
+     */
+    suspend fun cloudHistory(page: Int = 1): RepoResult<HistoryPage> =
+        api.get("watch_list", mapOf("page" to page)).toRepoList { o, arr ->
+            val items = listFromObjOrArr(o, arr)
+            HistoryPage(
+                total = o?.int("total", 0)?.takeIf { it > 0 } ?: items.size,
+                items = items,
+            )
+        }
 
     /** POST /watch_list {id} - marks an album as read. */
     suspend fun addWatch(id: String): RepoResult<JSONObject> =
@@ -624,6 +707,72 @@ class AppRepository(
         api.post("comment_vote", mapOf("id" to id)).toRepoObj()
 
     // -----------------------------------------------------------------------
+    // Album comments
+    // -----------------------------------------------------------------------
+
+    /**
+     * GET /forum?mode=&aid=&page= - the comment list of one album.
+     *
+     * `mode="manhua"` is the scope the reference client (JMComic-qt `GetCommentReq2`) uses for an
+     * album's own comments; the same endpoint also serves the site-wide forum with other modes.
+     * The decrypted payload is `{"total": <int>, "list": [<comment>, …]}`, and each entry may carry
+     * nested `replys`.
+     */
+    suspend fun albumComments(aid: String, page: Int = 1, mode: String = COMMENT_MODE_ALBUM): RepoResult<CommentPage> =
+        api.get("forum", mapOf("mode" to mode, "aid" to aid, "page" to page)).toRepoList { o, arr ->
+            when {
+                arr != null -> CommentPage(
+                    total = arr.length(),
+                    items = (0 until arr.length())
+                        .mapNotNull { i -> arr.optJSONObject(i)?.let { CommentItem.fromJson(it) } },
+                )
+                else -> {
+                    val list = o?.objList("list") ?: emptyList()
+                    CommentPage(
+                        total = o?.int("total", 0)?.takeIf { it > 0 } ?: list.size,
+                        items = list.map { CommentItem.fromJson(it) },
+                    )
+                }
+            }
+        }
+
+    /**
+     * POST /comment {comment, aid[, comment_id]} - publish a comment on an album, or reply to an
+     * existing comment when [replyToCid] is given (JMComic-qt `SendCommentReq2`).
+     *
+     * Requires a logged-in session. Verified against the live endpoint: an anonymous POST answers
+     * `HTTP 401 / code 401 / errorMsg "請先登入會員"`, i.e. this mobile route really does accept
+     * posts (the `jmcomic` python library claims it does not, and posts to the web route instead).
+     * That message is surfaced verbatim by [ApiError.of], so the reader is told to log in rather
+     * than shown a bare 401.
+     */
+    suspend fun postComment(aid: String, content: String, replyToCid: String? = null): RepoResult<JSONObject> {
+        val params = mutableMapOf<String, Any?>("comment" to content, "aid" to aid)
+        if (!replyToCid.isNullOrBlank()) params["comment_id"] = replyToCid
+        // An empty `data` on a 200 means "posted, nothing to say about it" - not a failure.
+        return api.post("comment", params).toRepoObjAck()
+    }
+
+    /**
+     * POST /comment_vote {id} - like a comment.
+     *
+     * Only called for logged-in readers: the live endpoint answers an anonymous vote with an empty
+     * `HTTP 200` body (no envelope at all), which would surface as "server did not respond" -
+     * a misleading thing to show someone who merely is not logged in.
+     */
+    suspend fun likeComment(cid: String): RepoResult<Unit> =
+        api.post("comment_vote", mapOf("id" to cid)).toRepoAck()
+
+    /** Absolute URL for a comment avatar, or null when the comment has no picture. */
+    fun commentAvatar(photo: String?): String? {
+        val file = photo?.trim().orEmpty()
+        if (file.isEmpty()) return null
+        if (file.startsWith("http")) return file
+        val host = session.imgHost.ifBlank { "https://cdn-msp3.jmdanjonproxy.vip" }
+        return "$host/media/users/${file.trimStart('/')}"
+    }
+
+    // -----------------------------------------------------------------------
     // Tasks / achievements (kept - not ad related)
     // -----------------------------------------------------------------------
 
@@ -651,6 +800,34 @@ class AppRepository(
         when (this) {
             is ApiClient.Result.Success ->
                 if (code == 200) RepoResult.Ok(fn(obj, arr))
+                else RepoResult.Err(ApiError.of(session, code, serverMessage))
+            is ApiClient.Result.ApiFailure ->
+                RepoResult.Err(ApiError.of(session, code, serverMessage, httpStatus))
+            is ApiClient.Result.NetworkFailure -> RepoResult.Err(ApiError.network(session, message))
+        }
+
+    /**
+     * For write endpoints whose success is the *code*, not the payload.
+     *
+     * `/favorite` and `/comment_vote` answer `{"code":200,"data":[]}` when they worked - there is
+     * no object to return, and treating that as `noData` made every successful write look like a
+     * failure to the caller.
+     */
+    private fun ApiClient.Result.toRepoAck(): RepoResult<Unit> =
+        when (this) {
+            is ApiClient.Result.Success ->
+                if (code == 200) RepoResult.Ok(Unit)
+                else RepoResult.Err(ApiError.of(session, code, serverMessage))
+            is ApiClient.Result.ApiFailure ->
+                RepoResult.Err(ApiError.of(session, code, serverMessage, httpStatus))
+            is ApiClient.Result.NetworkFailure -> RepoResult.Err(ApiError.network(session, message))
+        }
+
+    /** Like [toRepoObj], but a 200 with an empty `data` is a success carrying an empty object. */
+    private fun ApiClient.Result.toRepoObjAck(): RepoResult<JSONObject> =
+        when (this) {
+            is ApiClient.Result.Success ->
+                if (code == 200) RepoResult.Ok(obj ?: JSONObject())
                 else RepoResult.Err(ApiError.of(session, code, serverMessage))
             is ApiClient.Result.ApiFailure ->
                 RepoResult.Err(ApiError.of(session, code, serverMessage, httpStatus))

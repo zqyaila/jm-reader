@@ -1,13 +1,11 @@
 package com.jm.reader.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,8 +22,11 @@ import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
 import com.jm.reader.data.model.ComicListItem
 import com.jm.reader.data.repo.AppRepository
-import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.AppSpacing
+import com.jm.reader.ui.theme.GlassShape
+import com.jm.reader.ui.theme.glassClickable
 import com.jm.reader.ui.theme.glassSurface
+import com.jm.reader.util.JmId
 
 @Composable
 fun ComicCard(
@@ -38,15 +39,20 @@ fun ComicCard(
 ) {
     // The whole tile is one glass pane: cover, category chip and caption all sit on the same
     // frosted surface, which is what makes a grid of them read as glass rather than as floating
-    // text over the canvas.
+    // text over the canvas. Pressing it dips the pane on a spring (spec press feedback) rather than
+    // flashing a ripple across the corner art.
     Column(
         modifier = modifier
-            .clickable(onClick = onClick)
-            .glassSurface(shape = GlassShapeSmall, elevation = 6.dp)
+            .glassClickable(onClick = onClick, shape = GlassShape)
+            .glassSurface(shape = GlassShape, elevation = 6.dp)
             .padding(6.dp),
     ) {
         val cover = if (item.image.isNotBlank()) item.image else repo.comicCover(item.id, item.updateAt)
-        val coverShape = RoundedCornerShape(10.dp)
+        // Shape roles come from the theme instead of a literal radius: `small` (12dp) is the
+        // nested-media role and `extraSmall` (8dp) is the badge role, so a future tweak to
+        // `AppShapes` moves every card and every badge in the app together. See theme/Shapes.kt.
+        val coverShape = MaterialTheme.shapes.small
+        val badgeShape = MaterialTheme.shapes.extraSmall
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -73,12 +79,29 @@ fun ComicCard(
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .padding(AppSpacing.Inline)
+                        .clip(badgeShape)
                         .background(Color(0x99000000))
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                        .padding(horizontal = AppSpacing.Inline, vertical = 1.dp),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+            // Album id, opposite the category chip: every work states which JM number it is, so a
+            // reader can identify (and search for) it without opening the detail page.
+            JmId.display(item.id).takeIf { it.isNotEmpty() }?.let { label ->
+                Text(
+                    text = label,
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(AppSpacing.Inline)
+                        .clip(badgeShape)
+                        .background(Color(0x99000000))
+                        .padding(horizontal = AppSpacing.Inline, vertical = 1.dp),
+                    maxLines = 1,
                 )
             }
         }
@@ -87,6 +110,9 @@ fun ComicCard(
             Text(
                 text = item.name,
                 style = MaterialTheme.typography.bodySmall,
+                // Medium weight lifts the title off the `labelSmall` author line below it; at
+                // Regular the two lines read as one block of grey on a busy cover.
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -96,6 +122,7 @@ fun ComicCard(
                     Text(
                         text = author,
                         style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Normal,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

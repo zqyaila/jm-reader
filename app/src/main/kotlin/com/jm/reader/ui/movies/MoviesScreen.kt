@@ -1,6 +1,5 @@
 package com.jm.reader.ui.movies
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -41,7 +40,8 @@ import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
-import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.GlassShape
+import com.jm.reader.ui.theme.glassClickable
 import com.jm.reader.ui.theme.glassSurface
 import kotlinx.coroutines.launch
 
@@ -80,8 +80,8 @@ fun MoviesScreen(navController: NavHostController) {
                     items(items, key = { it.id }) { movie ->
                         Column(
                             Modifier
-                                .glassSurface(shape = GlassShapeSmall)
-                                .clickable { navController.navigate(Routes.movieDetail(movie.id)) }
+                                .glassClickable(shape = GlassShape) { navController.navigate(Routes.movieDetail(movie.id)) }
+                                .glassSurface(shape = GlassShape)
                                 .padding(6.dp),
                         ) {
                             AsyncImage(

@@ -72,6 +72,9 @@ class AppStringsTest {
             s.errRequestFailedFmt.format(500)
             s.deleteConfirmFmt.format("x")
             s.downloadProgressFmt.format(1, 2)
+            s.commentsCountFmt.format(1)
+            s.commentReplyToFmt.format("reader")
+            s.commentRepliesFmt.format(2)
             assertTrue("$name signedDaysFmt lost its placeholder", s.signedDaysFmt.contains("%"))
         }
     }

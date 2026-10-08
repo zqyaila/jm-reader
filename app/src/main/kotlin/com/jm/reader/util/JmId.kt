@@ -35,4 +35,16 @@ object JmId {
 
     /** True when the text looks like an id, so the UI can offer a direct "open" affordance. */
     fun looksLikeId(raw: String?): Boolean = parse(raw) != null
+
+    /**
+     * Canonical on-screen form of an album id: `441923` -> `JM441923`.
+     *
+     * Ids are shown with the `JM` prefix everywhere (cards, detail page) so a reader can copy them
+     * straight into this app's search box or the site, both of which accept the prefixed form.
+     * Already-prefixed input is normalised rather than double-prefixed.
+     */
+    fun display(id: String?): String {
+        val digits = parse(id) ?: return id?.trim().orEmpty()
+        return "JM$digits"
+    }
 }

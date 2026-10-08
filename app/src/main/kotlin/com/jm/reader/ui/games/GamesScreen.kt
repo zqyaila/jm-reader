@@ -2,7 +2,6 @@ package com.jm.reader.ui.games
 
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +38,8 @@ import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.components.AppTopBar
-import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.GlassShape
+import com.jm.reader.ui.theme.glassClickable
 import com.jm.reader.ui.theme.glassSurface
 import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
@@ -81,12 +81,12 @@ fun GamesScreen(navController: NavHostController) {
                     items(items, key = { it.id }) { game ->
                         Column(
                             Modifier
-                                .glassSurface(shape = GlassShapeSmall)
-                                .clickable {
+                                .glassClickable(shape = GlassShape) {
                                     if (game.link.isNotBlank()) {
                                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(game.link))) }
                                     }
                                 }
+                                .glassSurface(shape = GlassShape)
                                 .padding(6.dp),
                         ) {
                             AsyncImage(

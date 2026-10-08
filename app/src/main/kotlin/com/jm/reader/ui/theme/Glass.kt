@@ -1,8 +1,12 @@
 package com.jm.reader.ui.theme
 
 import android.os.Build
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,19 +24,26 @@ import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Liquid glass, implemented after the **skill-liquid-glass** design spec
@@ -63,9 +74,12 @@ import androidx.compose.ui.unit.dp
  * Refraction (`lens`) needs an AGSL RuntimeShader, which the library drives through its own
  * `BackdropEffectScope`; here it is approximated by the rim light plus the 1 px inner shading.
  */
-val GlassShape: Shape = RoundedCornerShape(20.dp)
-val GlassShapeLarge: Shape = RoundedCornerShape(28.dp)
-val GlassShapeSmall: Shape = RoundedCornerShape(14.dp)
+// Radii come from the spec's metric tokens (16dp standard / 24dp heavy), plus a capsule for
+// buttons, chips and bars - the spec uses `Capsule()` for every one of those controls.
+val GlassShape: Shape = RoundedCornerShape(GlassSizes.RadiusStandard)
+val GlassShapeLarge: Shape = RoundedCornerShape(GlassSizes.RadiusHeavy)
+val GlassShapeSmall: Shape = RoundedCornerShape(GlassSizes.RadiusInner)
+val GlassCapsule: Shape = RoundedCornerShape(percent = 50)
 
 /** True when the platform can blur at all (RenderEffect, API 31+). */
 val supportsBlur: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -200,7 +214,13 @@ fun Modifier.liquidGlass(
 
     return base
         .drawBehind {
-            // Specular highlight: a diagonal sheen, the signature "pane of glass" cue.
+            // Specular highlight: a sheen along the spec's 45deg axis, the signature "pane of
+            // glass" cue. The gradient is centred on the surface so it stays put as panes resize.
+            val rad = Math.toRadians(GlassHighlightAngle.toDouble())
+            val ux = cos(rad).toFloat()
+            val uy = sin(rad).toFloat()
+            val reach = (size.width + size.height) / 2f
+            val centre = Offset(size.width / 2f, size.height / 2f)
             drawRect(
                 Brush.linearGradient(
                     colors = listOf(
@@ -208,8 +228,8 @@ fun Modifier.liquidGlass(
                         GlassSpecular.copy(alpha = GlassHighlightAlpha * 0.25f),
                         Color.Transparent,
                     ),
-                    start = Offset.Zero,
-                    end = Offset(size.width * 0.85f, size.height * 1.15f),
+                    start = centre - Offset(ux * reach, uy * reach),
+                    end = centre + Offset(ux * reach, uy * reach),
                 ),
             )
         }
@@ -237,6 +257,58 @@ fun Modifier.glassSurface(
     borderColor = borderColor,
     borderWidth = borderWidth,
 )
+
+/**
+ * Clickable glass with the spec's press behaviour: the surface dips and its highlight brightens,
+ * both on damped springs (`GlassAnimationSpecs.Press`), instead of a ripple that would fight the
+ * material it is drawn on.
+ *
+ * Use this in place of `Modifier.clickable` on any glass surface - cards, list rows, nav tabs - so
+ * the whole app presses the same way.
+ */
+@Composable
+fun Modifier.glassClickable(
+    shape: Shape = GlassShape,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val progress by animateFloatAsState(
+        targetValue = if (pressed && enabled) 1f else 0f,
+        animationSpec = GlassMotion.press,
+        label = "glassPress",
+    )
+    // Spec: 1 -> 1 + 4dp/height. A fixed 1.5% reads the same across the app's very different
+    // surface sizes, and avoids a divide-by-height that is invisible on tall cards.
+    val scale = 1f - 0.015f * progress
+    return this
+        .graphicsLayer { scaleX = scale; scaleY = scale }
+        .drawWithContent {
+            drawContent()
+            // Spec: highlight 0.15 -> 0.15 + 0.35 * progress. Taken literally that would lay a
+            // half-opaque white sheet over the surface (washing out the cover art and the label),
+            // so the press adds a much lighter sheen on top of the resting highlight instead: the
+            // gesture still reads as "the glass lit up" without hiding what is under it.
+            //
+            // The sheen is clipped to [shape] *inside* the draw call rather than by
+            // `Modifier.clip`: clipping the node would also clip away the drop shadow that
+            // `glassSurface` paints outside its bounds.
+            if (progress > 0f) {
+                val outline = shape.createOutline(size, layoutDirection, this)
+                val clip = Path().apply { addOutline(outline) }
+                clipPath(clip) {
+                    drawRect(GlassSpecular.copy(alpha = 0.10f * progress))
+                }
+            }
+        }
+        .clickable(
+            interactionSource = interaction,
+            indication = null,
+            enabled = enabled,
+            onClick = onClick,
+        )
+}
 
 /** Panel container. */
 @Composable

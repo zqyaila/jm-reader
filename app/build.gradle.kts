@@ -20,17 +20,31 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = rootProject.file("jmreader.keystore")
-            storePassword = "jmreader123"
-            keyAlias = "jmreader"
-            keyPassword = "jmreader123"
+            // Signing material is never committed (`*.keystore` is git-ignored). Locally it lives
+            // at the project root; in CI it is restored from secrets before `assembleRelease`.
+            // Credentials come from the environment so a real key does not have to be written into
+            // this file; the literals below are only the previous defaults, kept so an existing
+            // local setup keeps working unchanged.
+            val keystore = rootProject.file("jmreader.keystore")
+            if (keystore.exists()) {
+                storeFile = keystore
+                storePassword = System.getenv("JMREADER_STORE_PASSWORD") ?: "jmreader123"
+                keyAlias = System.getenv("JMREADER_KEY_ALIAS") ?: "jmreader"
+                keyPassword = System.getenv("JMREADER_KEY_PASSWORD") ?: "jmreader123"
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // Attach signing only when the keystore is actually present. Referencing a missing
+            // store file makes `assembleRelease` fail outright, which would break a fresh clone and
+            // any CI run without the signing secrets; an unsigned release APK is still a valid
+            // build artifact, so the build degrades instead of dying.
+            if (rootProject.file("jmreader.keystore").exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

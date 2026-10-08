@@ -53,6 +53,7 @@ fun JMRoot(app: JMApplication) {
         LocalLanguageManager provides app.languageManager,
         LocalDownloadManager provides app.downloadManager,
         LocalHistoryManager provides app.historyManager,
+        LocalSearchHistoryManager provides app.searchHistoryManager,
         LocalAppStrings provides strings,
     ) {
         val navController = rememberNavController()

@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -50,9 +51,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -79,6 +83,7 @@ import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.AppStrings
 import com.jm.reader.ui.theme.GlassShapeSmall
 import com.jm.reader.ui.theme.glassSurface
+import com.jm.reader.util.JmId
 import kotlinx.coroutines.launch
 
 private data class DetailUiState(
@@ -97,6 +102,8 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var state by remember { mutableStateOf(DetailUiState()) }
+    val comments = rememberCommentsController(id)
+    val commentsUi = rememberCommentsUi()
 
     suspend fun load() {
         state = DetailUiState(loading = true)
@@ -112,6 +119,8 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
         }
     }
     LaunchedEffect(id) { load() }
+    // Comments load independently of the album: a comment-endpoint hiccup must not blank the page.
+    LaunchedEffect(id) { comments.load(reset = true) }
 
     val downloadManager = LocalDownloadManager.current
     val context = LocalContext.current
@@ -167,19 +176,42 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize(),
                                 )
+                                // Gradient scrim rather than a flat band: the title stays readable
+                                // over any cover art without a hard edge cutting the image.
                                 Box(
                                     Modifier
-                                        .fillMaxWidth()
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                0.45f to Color.Transparent,
+                                                1f to Color(0xE6000000),
+                                            ),
+                                        ),
+                                )
+                                Column(
+                                    Modifier
                                         .align(Alignment.BottomCenter)
-                                        .background(Color(0x66000000))
-                                        .padding(12.dp),
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 14.dp),
                                 ) {
                                     Text(
                                         detail.name,
                                         color = Color.White,
-                                        style = MaterialTheme.typography.titleLarge,
+                                        style = MaterialTheme.typography.headlineSmall,
                                         fontWeight = FontWeight.Bold,
+                                        maxLines = 3,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
+                                    detail.authors.firstOrNull()?.takeIf { it.isNotBlank() }?.let { author ->
+                                        Text(
+                                            author,
+                                            color = Color.White.copy(alpha = 0.85f),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(top = 2.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -214,9 +246,20 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                             scope.launch { snackbar.showSnackbar(s.loginFirst) }
                                         } else {
                                             scope.launch {
-                                                repo.addFavorite(detail.id)
-                                                snackbar.showSnackbar(if (detail.isFavorite) s.removedFavorite else s.addedFavorite)
-                                                load()
+                                                // Flip the heart from the write's own result instead of
+                                                // re-fetching the album: the refetch blanked the page and,
+                                                // when the server had not caught up, came back with the old
+                                                // value - which is why the heart only turned red after a
+                                                // manual refresh. A failure is now reported instead of
+                                                // being swallowed.
+                                                when (val r = repo.addFavorite(detail.id)) {
+                                                    is RepoResult.Ok -> {
+                                                        val nowFavorite = !detail.isFavorite
+                                                        state = state.copy(detail = detail.copy(isFavorite = nowFavorite))
+                                                        snackbar.showSnackbar(if (nowFavorite) s.addedFavorite else s.removedFavorite)
+                                                    }
+                                                    is RepoResult.Err -> snackbar.showSnackbar(r.message)
+                                                }
                                             }
                                         }
                                     },
@@ -249,6 +292,42 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                     .glassSurface(shape = GlassShapeSmall)
                                     .padding(horizontal = 12.dp, vertical = 10.dp),
                             ) {
+                                // The work's JM number, stated outright and one tap from the
+                                // clipboard: readers routinely want to quote or search it.
+                                val workId = JmId.display(detail.id)
+                                if (workId.isNotEmpty()) {
+                                    val clipboard = LocalClipboardManager.current
+                                    Row(
+                                        Modifier
+                                            .padding(bottom = 6.dp)
+                                            .clip(GlassShapeSmall)
+                                            .clickable {
+                                                clipboard.setText(AnnotatedString(workId))
+                                                scope.launch { snackbar.showSnackbar(s.workIdCopied) }
+                                            }
+                                            .padding(horizontal = 6.dp, vertical = 3.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        Text(
+                                            s.workIdLabel,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                        Text(
+                                            workId,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                        Icon(
+                                            Icons.Filled.ContentCopy,
+                                            contentDescription = s.workIdCopied,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(14.dp),
+                                        )
+                                    }
+                                }
                                 Text(
                                     detail.description.ifBlank { s.noDescription },
                                     style = MaterialTheme.typography.bodyMedium,
@@ -370,6 +449,53 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                 }
                             }
                         }
+
+                        commentsSection(
+                            controller = comments,
+                            ui = commentsUi,
+                            loggedIn = session.isLoggedIn,
+                            onLoginRequired = {
+                                scope.launch { snackbar.showSnackbar(s.commentLoginRequired) }
+                                navController.navigate(Routes.login())
+                            },
+                            onPost = { content, replyTo ->
+                                commentsUi.posting = true
+                                try {
+                                    when (val r = repo.postComment(detail.id, content, replyTo?.cid)) {
+                                        is RepoResult.Ok -> {
+                                            commentsUi.draft = ""
+                                            commentsUi.replyTarget = null
+                                            snackbar.showSnackbar(s.commentPosted)
+                                            comments.load(reset = true)
+                                        }
+                                        is RepoResult.Err -> snackbar.showSnackbar(
+                                            r.message.ifBlank { s.commentPostFailed },
+                                        )
+                                    }
+                                } finally {
+                                    // Cleared even if the coroutine is cancelled, so the Send
+                                    // button can never be left permanently disabled and spinning.
+                                    commentsUi.posting = false
+                                }
+                            },
+                            onLike = { comment ->
+                                // With no CID there is nothing to vote on; the row already
+                                // incremented its own display count.
+                                if (comment.cid.isNotBlank()) scope.launch {
+                                    when (val r = repo.likeComment(comment.cid)) {
+                                        is RepoResult.Ok -> snackbar.showSnackbar(s.commentLiked)
+                                        is RepoResult.Err -> snackbar.showSnackbar(
+                                            r.message.ifBlank { s.commentLikeFailed },
+                                        )
+                                    }
+                                }
+                            },
+                            onOpenAlbum = { aid -> navController.navigate(Routes.comicDetail(aid)) },
+                            onRetry = { scope.launch { comments.load(reset = true) } },
+                            onLoadMore = { scope.launch { comments.load() } },
+                            // Screen-scoped, so a post survives the composer being scrolled away.
+                            scope = scope,
+                        )
 
                         item { Box(Modifier.padding(bottom = 24.dp)) }
                     }

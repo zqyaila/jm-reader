@@ -49,6 +49,12 @@ fun JMReaderTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
+        // M3 Expressive hierarchy + shape scale. Both are wired here (and nowhere else) so every
+        // screen, including the ones that still look "old", inherits the new type scale at once -
+        // `MaterialTheme.typography.*` is used by 22 files, so this is the single highest-leverage
+        // change in the refactor. See Type.kt and Shapes.kt for the rationale per token.
+        typography = AppTypography,
+        shapes = AppShapes,
         content = content,
     )
 }

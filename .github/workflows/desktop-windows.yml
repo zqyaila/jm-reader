@@ -1,0 +1,82 @@
+name: Desktop (Windows)
+
+# Builds the Compose Multiplatform desktop app and packages it into Windows installers with the
+# JDK's own jpackage. Runs on windows-latest because jpackage can only produce a Windows installer
+# from a Windows host.
+#
+#   * .msi - Windows Installer package (silent-deployable, in-place upgrades via upgradeUuid)
+#   * .exe - the same app wrapped in a setup wizard
+#
+# Both bundle a runtime, so the target machine does not need Java installed.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    name: Build Windows installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # jpackage refuses to run on anything older than 17. The build's toolchain is pinned to
+          # 17 in desktop/build.gradle.kts, so this also satisfies the toolchain lookup.
+          java-version: '17'
+          cache: gradle
+
+      # jpackage shells out to WiX (candle.exe / light.exe) for the .msi and .exe targets.
+      # The runner image normally already has WiX 3.x; this only installs it when missing, so the
+      # job does not break if the image ever drops it.
+      - name: Ensure WiX Toolset
+        shell: pwsh
+        run: |
+          $candle = Get-Command candle.exe -ErrorAction SilentlyContinue
+          if ($candle) {
+            Write-Host "WiX already available: $($candle.Source)"
+          } else {
+            Write-Host "WiX not found - installing via Chocolatey"
+            choco install wixtoolset --no-progress -y
+            "C:\Program Files (x86)\WiX Toolset v3.14\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      # Pure-logic tests: JM id parsing, de-scramble strip geometry, version comparison, HTML
+      # stripping, the crypto round trip and the three-language string table. No network needed.
+      - name: Unit tests
+        run: .\gradlew.bat --no-daemon --stacktrace :desktop:test
+
+      - name: Package MSI and EXE
+        run: .\gradlew.bat --no-daemon --stacktrace :desktop:packageMsi :desktop:packageExe
+
+      - name: Collect installers
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          $root = "desktop\build\compose\binaries\main"
+          Get-ChildItem -Path $root -Recurse -Include *.msi, *.exe -ErrorAction SilentlyContinue |
+            ForEach-Object {
+              $name = "JMReader-$($_.Extension.TrimStart('.'))-$($env:GITHUB_SHA.Substring(0,7))$($_.Extension)"
+              Copy-Item $_.FullName -Destination (Join-Path "artifacts" $name)
+            }
+          Get-ChildItem artifacts | Select-Object Name, Length
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: jm-reader-windows-installer
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 30

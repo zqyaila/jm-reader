@@ -52,4 +52,16 @@ class JmIdTest {
         assertTrue(JmId.looksLikeId("JM441923"))
         assertFalse(JmId.looksLikeId("MANA"))
     }
+
+    @Test
+    fun `display normalises any accepted shape to the JM form`() {
+        assertEquals("JM441923", JmId.display("441923"))
+        assertEquals("JM441923", JmId.display("JM441923"))
+        assertEquals("JM441923", JmId.display("  jm 441923 "))
+        assertEquals("JM441923", JmId.display("https://18comic.vip/album/441923/"))
+        // Anything that is not an id is passed through unchanged, never prefixed.
+        assertEquals("MANA", JmId.display("MANA"))
+        assertEquals("", JmId.display(""))
+        assertEquals("", JmId.display(null))
+    }
 }

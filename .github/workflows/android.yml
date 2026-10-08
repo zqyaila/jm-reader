@@ -1,7 +1,12 @@
 name: Android CI
 
-# Build a debug APK on every push / pull request, and make the APK downloadable
-# from the run's "Artifacts" section. Also usable as a manual build check.
+# Builds the Android artifacts on every push / pull request and makes them downloadable from the
+# run's "Artifacts" section. Also usable as a manual build check.
+#
+#   * debug APK   - always built; installs side by side with a release build
+#   * release APK - built only when the signing secrets are configured (see README); without them
+#                   `assembleRelease` would only produce an unsigned APK of little use
+#   * unit tests  - the pure-logic suite under app/src/test
 on:
   push:
   pull_request:
@@ -16,8 +21,13 @@ permissions:
 
 jobs:
   build:
-    name: Build debug APK
+    name: Build APK
     runs-on: ubuntu-latest
+
+    # A step-level `if` cannot read the `secrets` context, so the "are signing secrets present?"
+    # check is pre-computed into a plain string here and tested as `env.HAS_KEYSTORE == 'true'`.
+    env:
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     steps:
       - name: Check out repository
@@ -44,22 +54,43 @@ jobs:
             echo "sdkmanager not found - letting Gradle resolve the SDK packages"
           fi
 
-      - name: Build debug APK
+      - name: Unit tests
         run: |
           # The wrapper is committed without the executable bit, so set it here.
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace assembleDebug
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
 
-      - name: Collect APK
+      - name: Build debug APK
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Restore release keystore
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > jmreader.keystore
+          ls -l jmreader.keystore
+
+      - name: Build release APK
+        if: env.HAS_KEYSTORE == 'true'
+        env:
+          JMREADER_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          JMREADER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          JMREADER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Collect APKs
         run: |
           mkdir -p artifacts
           cp app/build/outputs/apk/debug/app-debug.apk "artifacts/JMReader-debug-${GITHUB_SHA::7}.apk"
+          if [ -d app/build/outputs/apk/release ]; then
+            find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' \
+              -exec cp {} "artifacts/JMReader-release-${GITHUB_SHA::7}.apk" \; || true
+          fi
           ls -lh artifacts
 
-      - name: Upload APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: jm-reader-debug-apk
+          name: jm-reader-apk
           path: artifacts/*.apk
           if-no-files-found: error
           retention-days: 30

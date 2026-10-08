@@ -55,6 +55,9 @@ const val GlassShadowAlpha = 0.08f
 const val GlassInnerShadowDp = 4f
 const val GlassInnerShadowAlpha = 0.10f
 
+/** Specular sheen angle, in degrees (`HighlightStyle.Default.angle`). */
+const val GlassHighlightAngle = 45f
+
 /**
  * Fog strength per surface kind (see the deviation note above).
  *

@@ -1,10 +1,7 @@
 package com.jm.reader.ui
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,13 +49,16 @@ import com.jm.reader.ui.category.CategoriesScreen
 import com.jm.reader.ui.home.HomeScreen
 import com.jm.reader.ui.library.LibraryScreen
 import com.jm.reader.ui.member.MemberScreen
+import com.jm.reader.ui.theme.AppMotion
+import com.jm.reader.ui.theme.AppSpacing
 import com.jm.reader.ui.theme.BrandOrangeDeep
 import com.jm.reader.ui.theme.BrandOrangeSoft
 import com.jm.reader.ui.theme.DarkBg
 import com.jm.reader.ui.theme.GlassBar
+import com.jm.reader.ui.theme.GlassCapsule
 import com.jm.reader.ui.theme.GlassKind
-import com.jm.reader.ui.theme.GlassShapeLarge
-import com.jm.reader.ui.theme.GlassShapeSmall
+import com.jm.reader.ui.theme.GlassSizes
+import com.jm.reader.ui.theme.glassClickable
 import kotlin.math.roundToInt
 
 /** Vertical space the floating navigation pill occupies, reserved by scrolling content. */
@@ -137,7 +137,8 @@ private fun GlassBottomNav(
 
     GlassBar(
         modifier = modifier,
-        shape = GlassShapeLarge,
+        // Spec: bars and buttons are capsules, not rounded rectangles.
+        shape = GlassCapsule,
         // Content scrolls underneath this bar, so it uses the densest fog.
         kind = GlassKind.BottomBar,
         backdropLayer = backdropLayer,
@@ -145,17 +146,16 @@ private fun GlassBottomNav(
         BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
-                .height(62.dp)
-                .padding(6.dp),
+                .height(GlassSizes.BottomBarHeight)
+                .padding(AppSpacing.Inline),
         ) {
             val itemWidth = maxWidth / items.size
             // Damped spring, so the indicator glides and settles like a liquid rather than snapping.
+            // `spatialFast` is the Expressive token for a short *spatial* move, and it is the same
+            // spring the glass press/settle uses - so the pill and the pane it sits on move as one.
             val position by animateFloatAsState(
                 targetValue = selected.toFloat(),
-                animationSpec = spring(
-                    dampingRatio = 0.72f,
-                    stiffness = Spring.StiffnessMediumLow,
-                ),
+                animationSpec = AppMotion.spatialFast,
                 label = "navIndicator",
             )
 
@@ -166,13 +166,13 @@ private fun GlassBottomNav(
                 Modifier
                     .offset { IntOffset((position * itemWidth.toPx()).roundToInt(), 0) }
                     .width(itemWidth)
-                    .height(50.dp)
-                    .clip(GlassShapeSmall)
+                    .height(GlassSizes.BottomTabHeight)
+                    .clip(GlassCapsule)
                     .background(accent),
             )
 
             Row(
-                Modifier.fillMaxWidth().height(50.dp),
+                Modifier.fillMaxWidth().height(GlassSizes.BottomTabHeight),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 items.forEachIndexed { index, (label, icon) ->
@@ -181,8 +181,10 @@ private fun GlassBottomNav(
                     Column(
                         Modifier
                             .width(itemWidth)
-                            .clickable { onSelect(index) }
-                            .padding(vertical = 5.dp),
+                            .height(GlassSizes.BottomTabHeight)
+                            // Spec press feedback (spring dip + sheen) instead of a ripple, so the
+                            // tab responds the same way every other glass surface does.
+                            .glassClickable(shape = GlassCapsule, onClick = { onSelect(index) }),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -190,7 +192,10 @@ private fun GlassBottomNav(
                             icon,
                             contentDescription = label,
                             tint = tint,
-                            modifier = Modifier.size(21.dp),
+                            // 24dp, not 22: Material icons are drawn on a 24dp grid, so any other
+                            // size resamples every stroke and the set looks subtly soft next to
+                            // the 24dp icons used everywhere else in the app.
+                            modifier = Modifier.size(24.dp),
                         )
                         Text(
                             label,
