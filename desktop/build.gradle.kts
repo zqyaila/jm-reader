@@ -91,9 +91,53 @@ compose.desktop {
 
             packageName = "JMReader"
             packageVersion = "1.0.0"
-            description = "JM Reader — 跨平台漫画阅读器（非官方第三方客户端）"
+
+            // -------------------------------------------------------------------------------
+            // These five fields must stay ASCII. That is not cosmetic: it is the difference
+            // between a green and a red "Package MSI and EXE" step.
+            //
+            // jpackage writes them straight into the WiX sources it generates, and WiX's linker
+            // (light.exe) stores them in the MSI string tables using the code page of the
+            // installer's culture. jpackage hard-codes `-cultures:en-us` on Windows, i.e. code
+            // page 1252, and there is no Compose DSL knob to change it - doing so would mean
+            // overriding jpackage's own main.wxs. Any character outside cp1252 (CJK, full-width
+            // punctuation) makes light.exe abort with
+            //
+            //   error LGHT0311 : A string was provided with characters that are not available
+            //   in the specified database code page '1252'.
+            //
+            // which jpackage reports only as "External tool execution failed ... Exit code: 311",
+            // a long way away from the actual cause. The em dash and the copyright sign are in
+            // fact representable in cp1252 and were never the problem - the Chinese text was. The
+            // tripwire below is nevertheless stricter than cp1252 and demands plain ASCII: "stay
+            // inside 0x20..0x7E" is a rule that is trivial to check and needs no code page table,
+            // and these fields never needed anything fancier.
+            //
+            // The localised product copy belongs in the app itself (the About screen), where a
+            // human actually reads it. These fields land in the MSI's Package/Comments property,
+            // which is invisible to the end user: Add/Remove Programs shows ProductName
+            // ("JMReader", from packageName) and Publisher (vendor), both already ASCII.
+            // -------------------------------------------------------------------------------
+            description = "JM Reader - unofficial third-party comic reader (cross-platform)"
             vendor = "JMReader Contributors"
-            copyright = "Copyright © 2026 — GPL-3.0"
+            copyright = "Copyright (c) 2026 JMReader Contributors - GPL-3.0"
+
+            // Fail at *configuration* time - seconds into the run, with the message below - rather
+            // than 40+ seconds later inside a jpackage subprocess that only says "Exit code: 311".
+            // This exact bug cost several CI round trips, so it gets a tripwire.
+            listOf(
+                "packageName" to packageName,
+                "packageVersion" to packageVersion,
+                "description" to description,
+                "vendor" to vendor,
+                "copyright" to copyright,
+            ).forEach { (field, value) ->
+                val offending = value?.filter { it.code > 0x7E || it.code < 0x20 }.orEmpty()
+                check(offending.isEmpty()) {
+                    "jpackage field `$field` = \"$value\" contains characters WiX cannot encode " +
+                        "in code page 1252 ($offending). Keep this field ASCII - see the note above."
+                }
+            }
 
             // Bundled runtime. `includeAllModules = true` ships the whole JDK runtime image, so
             // the target machine needs no Java at all.
