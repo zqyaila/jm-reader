@@ -8,14 +8,19 @@ name: Desktop (Windows)
 #   * .exe - the same app wrapped in a setup wizard
 #
 # Both bundle a runtime, so the target machine does not need Java installed.
+#
+# Triggered directly by pull requests (as a build check) and, for pushes to master, as a *reusable
+# workflow* from release.yml - which is what actually publishes the installers to the `latest`
+# release. It deliberately does NOT trigger on `push` by itself any more: the same build running
+# twice per push would mean two sets of artifacts and a release job racing itself.
+#
+# There is also deliberately no `concurrency` block here, for the same reason as in android.yml: a
+# called workflow inherits the caller's name/ref, so the caller's two build jobs would land in the
+# SAME group and `cancel-in-progress` would make one cancel the other.
 on:
-  push:
   pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 permissions:
   contents: read
@@ -264,7 +269,11 @@ jobs:
           Get-ChildItem -Path $root -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -in '.msi', '.exe' } |
             ForEach-Object {
-              $name = "JMReader-$($_.Extension.TrimStart('.'))-$($env:GITHUB_SHA.Substring(0,7))$($_.Extension)"
+              # Asset names are deliberately version- and sha-free. The rolling `latest` release is
+              # replaced on every green build, and constant names are what keep the download URL
+              # constant: .../releases/download/latest/JMReader-windows-x64.msi. The commit that
+              # produced them is recorded in the release notes instead of in the filename.
+              $name = "JMReader-windows-x64$($_.Extension)"
               Copy-Item $_.FullName -Destination (Join-Path "artifacts" $name)
             }
           Get-ChildItem artifacts | Select-Object Name, Length

@@ -1,0 +1,88 @@
+name: Release
+
+# One rolling release, refreshed by every green build on master:
+#
+#   https://github.com/<owner>/<repo>/releases/tag/latest
+#
+# Why this file exists: the build workflows only ever called `actions/upload-artifact`, which parks
+# files under a *run* (and expires them after 30 days). Nothing ever called the Releases API, so
+# nothing appeared on the Releases page no matter how green the build was. This workflow is that
+# missing piece.
+#
+# Both platform builds run first - as reusable workflows, so each build's logic still lives in
+# exactly one place - and only when BOTH are green does the publish job replace the `latest`
+# release. A failing build therefore leaves the previous release untouched: `latest` never means
+# "half published".
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Serialise releases on a ref, so that a burst of pushes cannot interleave delete/create on the
+# same tag. cancel-in-progress additionally stops a superseded build from holding a runner.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Build Windows installers
+    uses: ./.github/workflows/desktop-windows.yml
+
+  apk:
+    name: Build Android APKs
+    uses: ./.github/workflows/android.yml
+    # A called workflow does not see the caller's secrets unless they are forwarded explicitly.
+    # This is what keeps KEYSTORE_BASE64 / KEY_ALIAS / ... working inside android.yml, which would
+    # otherwise silently skip the signed release APK.
+    secrets: inherit
+
+  publish:
+    name: Publish the rolling release
+    needs: [windows, apk]
+    runs-on: ubuntu-latest
+    # The only job in the repo that can write to it. The build jobs above stay read-only.
+    permissions:
+      contents: write
+    steps:
+      - name: Download the Windows installers
+        uses: actions/download-artifact@v4
+        with:
+          name: jm-reader-windows-installer
+          path: dist
+
+      - name: Download the Android APKs
+        uses: actions/download-artifact@v4
+        with:
+          name: jm-reader-apk
+          path: dist
+
+      - name: Show what is about to be published
+        run: ls -lh dist
+
+      # Delete-then-create rather than `gh release upload --clobber`.
+      #
+      #   * `--clobber` would leave assets from an older commit sitting next to new ones whenever a
+      #     filename changes, i.e. a release that is a mix of two builds.
+      #   * delete+create keeps the tag pointing at the commit that actually produced these assets,
+      #     and it is all-or-nothing: if this run is cancelled between the two commands the previous
+      #     release stays gone only until the next green build, which recreates it from scratch.
+      #     (Never reached at all when a build fails, because the job `needs` both of them.)
+      - name: Replace the `latest` release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=latest
+          notes=$(printf 'Rolling build of `master`.\n\n| | |\n|---|---|\n| Commit | `%s` |\n| Built | %s |\n| Event | `%s` |\n\nThe assets are replaced on every green build on `master`, and their filenames are stable, so\n`.../releases/download/latest/JMReader-windows-x64.msi` always serves the newest build.\n' \
+            "$GITHUB_SHA" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$GITHUB_EVENT_NAME")
+          gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Latest build" \
+            --notes "$notes"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY"

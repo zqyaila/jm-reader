@@ -1,20 +1,25 @@
 name: Android CI
 
-# Builds the Android artifacts on every push / pull request and makes them downloadable from the
-# run's "Artifacts" section. Also usable as a manual build check.
+# Builds the Android artifacts and makes them downloadable from the run's "Artifacts" section.
 #
 #   * debug APK   - always built; installs side by side with a release build
 #   * release APK - built only when the signing secrets are configured (see README); without them
 #                   `assembleRelease` would only produce an unsigned APK of little use
 #   * unit tests  - the pure-logic suite under app/src/test
+#
+# Triggered directly by pull requests (as a build check) and, for pushes to master, as a *reusable
+# workflow* from release.yml - which is what actually publishes these APKs to the `latest` release.
+# It deliberately does NOT trigger on `push` by itself any more: the same build running twice per
+# push would mean two sets of artifacts and a release job racing itself.
+#
+# There is also deliberately no `concurrency` block here. A called workflow inherits the caller's
+# name/ref, so a group of `${{ github.workflow }}-${{ github.ref }}` would be *identical* for the
+# caller's two build jobs, and `cancel-in-progress` would make one cancel the other. The only
+# concurrency control is in release.yml, where it is scoped to the real unit of work.
 on:
-  push:
   pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 permissions:
   contents: read
@@ -80,10 +85,14 @@ jobs:
       - name: Collect APKs
         run: |
           mkdir -p artifacts
-          cp app/build/outputs/apk/debug/app-debug.apk "artifacts/JMReader-debug-${GITHUB_SHA::7}.apk"
+          # Asset names are deliberately version- and sha-free. The rolling `latest` release is
+          # replaced on every green build, and constant names are what keep the download URL
+          # constant: .../releases/download/latest/JMReader-android-debug.apk. The commit that
+          # produced them is recorded in the release notes instead of in the filename.
+          cp app/build/outputs/apk/debug/app-debug.apk "artifacts/JMReader-android-debug.apk"
           if [ -d app/build/outputs/apk/release ]; then
             find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' \
-              -exec cp {} "artifacts/JMReader-release-${GITHUB_SHA::7}.apk" \; || true
+              -exec cp {} "artifacts/JMReader-android-release.apk" \; || true
           fi
           ls -lh artifacts
 
