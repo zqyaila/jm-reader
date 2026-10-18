@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -28,6 +29,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +49,7 @@ import com.jm.reader.ui.LocalLanguageManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.update.UpdateDialog
 import com.jm.reader.ui.strings.UiLanguage
 import com.jm.reader.ui.theme.AdFreeAccent
 import com.jm.reader.ui.theme.GlassPanel
@@ -61,6 +66,7 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
     val scope = rememberCoroutineScope()
     // Reads the observable session state so the profile appears as soon as login succeeds.
     val loggedIn by session.loggedInFlow.collectAsState()
+    var showUpdate by remember { mutableStateOf(false) }
 
     Column(
         modifier
@@ -94,6 +100,9 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
 
         // Local-only, so it is offered whether or not the reader ever logged in.
         MenuItem(Icons.Filled.Insights, s.statsTitle) { navController.navigate(Routes.STATS) }
+        MenuItem(Icons.Filled.SystemUpdate, s.updateCheck) { showUpdate = true }
+
+        if (showUpdate) UpdateDialog(onDismiss = { showUpdate = false })
 
         // Language switcher
         Text(s.language, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(16.dp, 20.dp, 16.dp, 8.dp))

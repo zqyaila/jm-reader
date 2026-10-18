@@ -212,8 +212,8 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
     }
 
     /**
-     * "Guess you like": pick a tag with probability proportional to how many works carrying it the
-     * reader has opened, search that tag, then pick one of the results at random.
+     * "Guess you like": pick a tag with probability proportional to how many pages the reader has
+     * read in works carrying it, search that tag, then pick one of the results at random.
      *
      * Up to three weighted tags are tried before falling back to `/random_recommend`, because a
      * tag can legitimately have no results (or only the work just read). Tag choice and ranking

@@ -51,12 +51,19 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   comic and coming back leaves you exactly where you were instead of reloading page one
 - 🎲 **Surprise me** — a dice row on home opens a random work straight to its detail page,
   skipping the previous pick on consecutive taps (one `/random_recommend` request)
-- 📊 **Local reading stats** — "Me → Reading stats": works read, total time read, and the tag mix.
-  A tag's weight is how many distinct works carried it, so re-opening one work cannot inflate it.
-  Stored on device only, no account needed, clearable in one tap
+- 📊 **Local reading stats** — "Me → Reading stats": works read, time read, pages read, the tag mix
+  and "most read". **Only entering the reader counts** (opening a detail page does not), and each
+  work's weight is the **number of pages read**, so a 120-page work beats a 6-page bounce. A single
+  work is capped at 100 points so one long series cannot flatten every other taste. Device-only,
+  no account, clearable in one tap
 - 🔮 **Guess you like** — picks a tag with probability proportional to that weight, searches it and
   opens a random result. Favourite genres are more likely but not the only outcome (up to three tags
   are tried, then it falls back to `/random_recommend`)
+- 🔄 **In-app updates** — "Me → Check for updates" reads the rolling GitHub `latest` release.
+  When `api.github.com` / `github.com` are unreachable it falls back to the reverse proxies listed
+  on github.akams.cn (`gh-proxy.com`, `ghfast.top`, `ghproxy.net`). Downloads resume with HTTP
+  `Range` (only the missing bytes after a drop), are checked against the release's sha256, then
+  handed to the system installer
 - 🎬 **Secondary content** — novels, movies, games, blogs, forum
 - 🖥️ **Windows desktop build** — a separate `:desktop` module (Compose Multiplatform) reusing the
   same protocol implementation and design language: browse / search / detail / read, packaged into

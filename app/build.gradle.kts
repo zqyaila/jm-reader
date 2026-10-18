@@ -16,6 +16,11 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
+
+        // Compile time, used by the in-app updater to decide whether the rolling GitHub release is
+        // newer than the build this APK came from. The release is recreated on every green build,
+        // so its `published_at` is comparable to this timestamp.
+        buildConfigField("long", "BUILD_TIME", System.currentTimeMillis().toString() + "L")
     }
 
     signingConfigs {
@@ -59,6 +64,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

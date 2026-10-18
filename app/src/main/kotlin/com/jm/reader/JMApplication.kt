@@ -10,6 +10,7 @@ import com.jm.reader.data.net.HostManager
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.session.SessionManager
 import com.jm.reader.data.stats.ReadingStatsManager
+import com.jm.reader.data.update.UpdateManager
 import com.jm.reader.ui.strings.LanguageManager
 import com.jm.reader.util.CrashHandler
 import kotlinx.coroutines.CoroutineScope
@@ -34,6 +35,8 @@ class JMApplication : Application() {
     lateinit var searchHistoryManager: SearchHistoryManager
         private set
     lateinit var statsManager: ReadingStatsManager
+        private set
+    lateinit var updateManager: UpdateManager
         private set
 
     /**
@@ -63,6 +66,7 @@ class JMApplication : Application() {
         historyManager = HistoryManager(this)
         searchHistoryManager = SearchHistoryManager(this)
         statsManager = ReadingStatsManager(this)
+        updateManager = UpdateManager(this, http)
     }
 
     companion object {

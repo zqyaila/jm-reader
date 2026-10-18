@@ -235,6 +235,9 @@ data class AppStrings(
     val statsAlbums: String,
     val statsDuration: String,
     val statsTags: String,
+    val statsPages: String,
+    val statsTopWorks: String,
+    val pagesCountFmt: String,       // "%1\$d 页"
     val statsTagShare: String,
     val statsEmpty: String,
     val statsReset: String,
@@ -244,6 +247,17 @@ data class AppStrings(
     val guessNeedData: String,
     val hoursMinutesFmt: String,     // "%1\$d 小时 %2\$d 分"
     val minutesOnlyFmt: String,      // "%1\$d 分钟"
+    // In-app update
+    val updateCheck: String,
+    val updateChecking: String,
+    val updateLatest: String,
+    val updateAvailable: String,
+    val updateNotes: String,
+    val updateDownload: String,
+    val updateDownloadingFmt: String, // "正在下载 %1\$d%%"
+    val updateFailedFmt: String,      // "检查更新失败：%1\$s"
+    val updateInstallBlocked: String,
+    val updateSizeFmt: String,        // "安装包 %1\$s"
 ) {
     companion object {
         fun forLanguage(lang: UiLanguage): AppStrings = when (lang) {
@@ -458,6 +472,9 @@ val ZhCN = AppStrings(
     statsAlbums = "本子数目",
     statsDuration = "观看时长",
     statsTags = "标签数",
+    statsPages = "读过页数",
+    statsTopWorks = "读得最多的",
+    pagesCountFmt = "%1\$d 页",
     statsTagShare = "观看标签占比",
     statsEmpty = "还没有阅读记录，先去看几本吧",
     statsReset = "清除本地统计",
@@ -467,6 +484,16 @@ val ZhCN = AppStrings(
     guessNeedData = "先读几本，我才能猜你想看",
     hoursMinutesFmt = "%1\$d 小时 %2\$d 分",
     minutesOnlyFmt = "%1\$d 分钟",
+    updateCheck = "检查更新",
+    updateChecking = "正在检查更新…",
+    updateLatest = "已是最新版本",
+    updateAvailable = "发现新版本",
+    updateNotes = "更新说明",
+    updateDownload = "下载并安装",
+    updateDownloadingFmt = "正在下载 %1\$d%%",
+    updateFailedFmt = "检查更新失败：%1\$s",
+    updateInstallBlocked = "请先允许安装未知来源应用，然后重试",
+    updateSizeFmt = "安装包 %1\$s",
 )
 
 /** 繁體中文 */
@@ -673,6 +700,9 @@ val ZhTW = AppStrings(
     statsAlbums = "本子數目",
     statsDuration = "觀看時長",
     statsTags = "標籤數",
+    statsPages = "已讀頁數",
+    statsTopWorks = "讀得最多的",
+    pagesCountFmt = "%1\$d 頁",
     statsTagShare = "觀看標籤佔比",
     statsEmpty = "還沒有閱讀記錄，先去看幾本吧",
     statsReset = "清除本機統計",
@@ -682,6 +712,16 @@ val ZhTW = AppStrings(
     guessNeedData = "先讀幾本，我才能猜你想看",
     hoursMinutesFmt = "%1\$d 小時 %2\$d 分",
     minutesOnlyFmt = "%1\$d 分鐘",
+    updateCheck = "檢查更新",
+    updateChecking = "正在檢查更新…",
+    updateLatest = "已是最新版本",
+    updateAvailable = "發現新版本",
+    updateNotes = "更新說明",
+    updateDownload = "下載並安裝",
+    updateDownloadingFmt = "正在下載 %1\$d%%",
+    updateFailedFmt = "檢查更新失敗：%1\$s",
+    updateInstallBlocked = "請先允許安裝未知來源應用，然後重試",
+    updateSizeFmt = "安裝包 %1\$s",
 )
 
 /** English */
@@ -888,6 +928,9 @@ val En = AppStrings(
     statsAlbums = "Works read",
     statsDuration = "Time read",
     statsTags = "Tags",
+    statsPages = "Pages read",
+    statsTopWorks = "Most read",
+    pagesCountFmt = "%1\$d pages",
     statsTagShare = "Tag share",
     statsEmpty = "No reading history yet - open a few works first",
     statsReset = "Clear local stats",
@@ -897,4 +940,14 @@ val En = AppStrings(
     guessNeedData = "Read a few works first, then I can guess",
     hoursMinutesFmt = "%1\$d h %2\$d min",
     minutesOnlyFmt = "%1\$d min",
+    updateCheck = "Check for updates",
+    updateChecking = "Checking for updates…",
+    updateLatest = "You're on the latest build",
+    updateAvailable = "New build available",
+    updateNotes = "What's new",
+    updateDownload = "Download and install",
+    updateDownloadingFmt = "Downloading %1\$d%%",
+    updateFailedFmt = "Update check failed: %1\$s",
+    updateInstallBlocked = "Allow installing from unknown sources, then try again",
+    updateSizeFmt = "Package %1\$s",
 )

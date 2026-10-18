@@ -7,8 +7,8 @@ import kotlin.random.Random
  *
  * Kept pure (no Android, no coroutines) so the distribution can be unit tested: the UI asks for a
  * tag, then searches that tag and picks one work from the result. Weight = number of distinct
- * works the reader has opened carrying that tag, which makes a favourite tag more likely without
- * making it the only possible outcome.
+ * pages read in works carrying that tag, which makes a favourite tag more likely without making it
+ * the only possible outcome.
  */
 object GuessEngine {
 

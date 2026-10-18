@@ -88,9 +88,9 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
     // Reading time is what the stats screen reports and what flavours "guess you like". Counting
     // only while the screen is RESUMED means a reader left open in the background does not slowly
     // accumulate hours; pausing (or leaving) banks the current span.
-    LifecycleResumeEffect(Unit) {
+    LifecycleResumeEffect(albumId) {
         val started = SystemClock.elapsedRealtime()
-        onPauseOrDispose { stats.addReadingTime(SystemClock.elapsedRealtime() - started) }
+        onPauseOrDispose { stats.addReadingTime(albumId, SystemClock.elapsedRealtime() - started) }
     }
 
     var detail by remember { mutableStateOf<ComicDetail?>(null) }
@@ -115,6 +115,9 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
                 // Local history works without an account; the server copy is best-effort.
                 history.record(albumId, detail?.name.orEmpty(), detail?.authors?.firstOrNull(), detail?.addtime ?: 0L)
                 history.recordProgress(albumId, r.data.name, 1)
+                // This is the moment a work becomes part of the local taste profile: the reader
+                // actually opened a chapter (opening the detail page does not count).
+                stats.recordChapter(albumId, r.data.id)
                 if (session.isLoggedIn) repo.addWatch(chapterId)
             }
             is RepoResult.Err -> error = r.message
@@ -128,6 +131,9 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
             is RepoResult.Ok -> {
                 detail = r.data
                 history.record(albumId, r.data.name, r.data.authors.firstOrNull(), r.data.addtime)
+                // Tags belong to the work; record them here so the reader's stats can weight this
+                // work's contribution by how much of it was actually read.
+                stats.setMeta(albumId, r.data.name, r.data.tags)
             }
             is RepoResult.Err -> Unit
         }
@@ -157,6 +163,11 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
     LaunchedEffect(pagerState, isVertical) {
         snapshotFlow { pagerState.currentPage }
             .collect { p -> if (!isVertical) progress = p }
+    }
+    // "How much of this work did I read" - the furthest page per chapter, which is what the local
+    // stats use as the weight of this work's tags. Re-reading or scrolling back never adds.
+    LaunchedEffect(progress, currentReadId) {
+        stats.recordPage(albumId, currentReadId, progress + 1)
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {

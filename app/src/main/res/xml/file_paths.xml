@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloaded update APKs live in the app cache; FileProvider is what lets the system
+         installer read them without exposing the whole cache directory. -->
+    <cache-path name="updates" path="updates/" />
+</paths>

@@ -7,6 +7,7 @@ import com.jm.reader.data.history.SearchHistoryManager
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.session.SessionManager
 import com.jm.reader.data.stats.ReadingStatsManager
+import com.jm.reader.data.update.UpdateManager
 import com.jm.reader.ui.strings.AppStrings
 import com.jm.reader.ui.strings.LanguageManager
 
@@ -41,4 +42,9 @@ val LocalSearchHistoryManager = staticCompositionLocalOf<SearchHistoryManager> {
 /** On-device reading statistics (tags, time, distinct works). */
 val LocalStats = staticCompositionLocalOf<ReadingStatsManager> {
     error("LocalStats not provided")
+}
+
+/** GitHub-release updater (direct, with reverse-proxy fallback). */
+val LocalUpdateManager = staticCompositionLocalOf<UpdateManager> {
+    error("LocalUpdateManager not provided")
 }

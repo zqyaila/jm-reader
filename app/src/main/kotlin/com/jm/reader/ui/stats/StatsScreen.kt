@@ -77,8 +77,8 @@ fun StatsScreen(navController: NavHostController) {
                         valueSize = 16.sp,
                     )
                     NumberCard(
-                        value = snapshot.tagCounts.size.toString(),
-                        label = s.statsTags,
+                        value = snapshot.totalPages.toString(),
+                        label = s.statsPages,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -111,10 +111,45 @@ fun StatsScreen(navController: NavHostController) {
                 items(tags, key = { it.key }) { entry ->
                     TagShareRow(
                         tag = entry.key,
-                        count = entry.value,
+                        weightLabel = s.pagesCountFmt.format(entry.value),
                         share = GuessEngine.share(entry.value, snapshot.tagTotal),
                         fractionOfTop = entry.value.toFloat() / max.coerceAtLeast(1),
                     )
+                }
+            }
+
+            if (snapshot.topWorks.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        title = s.statsTopWorks,
+                        modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
+                    )
+                }
+                items(snapshot.topWorks, key = { it.albumId }) { work ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            work.name.ifBlank { "#${work.albumId}" },
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            buildString {
+                                append(s.pagesCountFmt.format(work.pages))
+                                if (work.millis >= 60_000L) {
+                                    append(" · ")
+                                    append(formatDuration(work.millis, s.hoursMinutesFmt, s.minutesOnlyFmt))
+                                }
+                            },
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
@@ -191,7 +226,7 @@ private fun NumberCard(
  * name is the real, absolute share.
  */
 @Composable
-private fun TagShareRow(tag: String, count: Int, share: Float, fractionOfTop: Float) {
+private fun TagShareRow(tag: String, weightLabel: String, share: Float, fractionOfTop: Float) {
     Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -204,7 +239,7 @@ private fun TagShareRow(tag: String, count: Int, share: Float, fractionOfTop: Fl
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "${count} · ${(share * 100).toInt()}%",
+                "$weightLabel · ${(share * 100).toInt()}%",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

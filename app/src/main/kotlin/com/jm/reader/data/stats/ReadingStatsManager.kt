@@ -11,47 +11,64 @@ import org.json.JSONObject
 /**
  * Local reading statistics - the data behind the stats screen and the "guess you like" dice.
  *
- * Deliberately **on-device only**: no account is needed, nothing is uploaded, and clearing app data
- * clears it. Two measurements are kept:
+ * **Only actual reading counts.** Opening a detail page (tapping a cover) is not a read: nothing is
+ * recorded until the reader screen successfully loads a chapter. That distinction is what makes the
+ * numbers mean "what I read", not "what I clicked".
  *
- *  - **works**: every album opened in the detail screen, with the tags it carried. Stored per album
- *    rather than as a running tag counter, so re-opening the same work cannot inflate its tags.
- *  - **time**: milliseconds actually spent on the reader screen (the reader reports resumed time,
- *    so a backgrounded app does not count).
+ * Per work it keeps:
+ *  - `chapters`: chapter id -> furthest page reached. Pages read of a work is the sum of those
+ *    furthest pages, so re-reading a page does not inflate anything.
+ *  - `millis`: reading time, reported by the reader only while it is resumed.
+ *  - `tags`: the work's tags, captured when the reader loads its metadata.
  *
- * Tag shares are derived from the album map: a tag's weight is "how many distinct works carried
- * it". That is what the weighted random picker consumes.
+ * The tag weights that feed [GuessEngine] are **pages read**, not "works opened": a 120-page work
+ * the reader actually finished should count far more than a 6-page sample they bounced off. A
+ * per-work cap keeps one very long series from drowning every other taste.
+ *
+ * Everything is on-device; there is no account and no upload.
  */
 class ReadingStatsManager(context: Context) {
 
-    /**
-     * Immutable view for the UI.
-     *
-     * [tagCounts] maps tag -> number of distinct works carrying it; [albumCount] is the number of
-     * distinct works opened.
-     */
+    data class WorkRead(
+        val albumId: String,
+        val name: String,
+        val pages: Int,
+        val millis: Long,
+    )
+
     data class Snapshot(
         val albumCount: Int = 0,
         val totalMillis: Long = 0L,
+        val totalPages: Int = 0,
+        /** tag -> weighted pages read (see [TAG_WEIGHT_CAP]). */
         val tagCounts: Map<String, Int> = emptyMap(),
+        val topWorks: List<WorkRead> = emptyList(),
     ) {
-        /** Total tag weight, i.e. the denominator of every share. */
         val tagTotal: Int get() = tagCounts.values.sum()
 
-        val hasData: Boolean get() = albumCount > 0 || totalMillis > 0
+        val hasData: Boolean get() = albumCount > 0 || totalMillis > 0 || totalPages > 0
 
         /** Tags sorted by weight, heaviest first. */
         fun rankedTags(): List<Map.Entry<String, Int>> =
-            tagCounts.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+            tagCounts.entries.sortedWith(
+                compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key },
+            )
     }
 
-    private data class Album(val tags: List<String>, val at: Long)
+    private data class Album(
+        var name: String = "",
+        var tags: List<String> = emptyList(),
+        val chapters: MutableMap<String, Int> = LinkedHashMap(),
+        var millis: Long = 0L,
+        var at: Long = 0L,
+    ) {
+        val pages: Int get() = chapters.values.sum()
+    }
 
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("jm_reading_stats", Context.MODE_PRIVATE)
 
     private val albums = LinkedHashMap<String, Album>()
-    private var totalMillis: Long = 0L
 
     private val _snapshot = MutableStateFlow(Snapshot())
     val snapshot: StateFlow<Snapshot> = _snapshot.asStateFlow()
@@ -62,41 +79,58 @@ class ReadingStatsManager(context: Context) {
     }
 
     /**
-     * Records that [albumId] was opened, with its [tags].
-     *
-     * Idempotent for the same album: the stored tag set is replaced (merged) rather than added to a
-     * counter, so opening a work fifty times does not make it fifty times as important.
+     * Records a work's title/tags. Called from the reader once the album metadata arrives, so a
+     * work that was never opened in the reader contributes nothing.
      */
     @Synchronized
-    fun recordAlbum(albumId: String, tags: List<String>) {
+    fun setMeta(albumId: String, name: String, tags: List<String>) {
         if (albumId.isBlank()) return
+        val album = albums.getOrPut(albumId) { Album() }
+        if (name.isNotBlank()) album.name = name
         val clean = tags.map { it.trim().trimStart('#') }
             .filter { it.isNotBlank() }
             .distinct()
             .take(MAX_TAGS_PER_ALBUM)
-        val existing = albums[albumId]
-        val merged = ((existing?.tags ?: emptyList()) + clean).distinct().take(MAX_TAGS_PER_ALBUM)
-        albums.remove(albumId)
-        albums[albumId] = Album(merged, System.currentTimeMillis())
-        trim()
-        persist()
-        publish()
+        if (clean.isNotEmpty()) album.tags = (album.tags + clean).distinct().take(MAX_TAGS_PER_ALBUM)
+        album.at = System.currentTimeMillis()
+        commit()
     }
 
-    /** Adds time actually spent reading. Ignored for non-positive or absurd values. */
+    /** A chapter was opened: it counts as at least one page read. */
     @Synchronized
-    fun addReadingTime(millis: Long) {
-        if (millis <= 0L) return
-        // A single session longer than 12 h is almost certainly a clock/suspend artefact.
-        totalMillis += millis.coerceAtMost(MAX_SESSION_MILLIS)
-        persist()
-        publish()
+    fun recordChapter(albumId: String, chapterId: String) {
+        if (albumId.isBlank() || chapterId.isBlank()) return
+        val album = albums.getOrPut(albumId) { Album() }
+        if (album.chapters[chapterId] == null) album.chapters[chapterId] = 1
+        album.at = System.currentTimeMillis()
+        commit()
+    }
+
+    /** Furthest page reached in a chapter; only increases, so scrolling back costs nothing. */
+    @Synchronized
+    fun recordPage(albumId: String, chapterId: String, page: Int) {
+        if (albumId.isBlank() || chapterId.isBlank() || page <= 0) return
+        val album = albums.getOrPut(albumId) { Album() }
+        val current = album.chapters[chapterId] ?: 0
+        if (page <= current) return
+        album.chapters[chapterId] = page
+        album.at = System.currentTimeMillis()
+        commit()
+    }
+
+    /** Reading time for one work; the reader reports resumed time only. */
+    @Synchronized
+    fun addReadingTime(albumId: String, millis: Long) {
+        if (albumId.isBlank() || millis <= 0L) return
+        val album = albums.getOrPut(albumId) { Album() }
+        album.millis += millis.coerceAtMost(MAX_SESSION_MILLIS)
+        album.at = System.currentTimeMillis()
+        commit()
     }
 
     @Synchronized
     fun clear() {
         albums.clear()
-        totalMillis = 0L
         prefs.edit().remove(KEY).apply()
         publish()
     }
@@ -105,24 +139,43 @@ class ReadingStatsManager(context: Context) {
     // Derived state + persistence
     // -----------------------------------------------------------------------
 
+    private fun commit() {
+        trim()
+        persist()
+        publish()
+    }
+
     private fun publish() {
-        val counts = LinkedHashMap<String, Int>()
-        albums.values.forEach { album ->
-            album.tags.forEach { tag -> counts[tag] = (counts[tag] ?: 0) + 1 }
+        val tags = LinkedHashMap<String, Int>()
+        var albumCount = 0
+        var totalPages = 0
+        var totalMillis = 0L
+        val works = ArrayList<WorkRead>()
+
+        albums.forEach { (id, album) ->
+            val pages = album.pages
+            // A work counts as "read" only once a page was turned in the reader.
+            if (pages > 0) {
+                albumCount++
+                totalPages += pages
+                totalMillis += album.millis
+                val weight = pages.coerceAtMost(TAG_WEIGHT_CAP).coerceAtLeast(1)
+                album.tags.forEach { tag -> tags[tag] = (tags[tag] ?: 0) + weight }
+                works += WorkRead(albumId = id, name = album.name, pages = pages, millis = album.millis)
+            }
         }
+
         _snapshot.value = Snapshot(
-            albumCount = albums.size,
+            albumCount = albumCount,
             totalMillis = totalMillis,
-            tagCounts = counts.entries
-                .sortedByDescending { it.value }
-                .associate { it.key to it.value },
+            totalPages = totalPages,
+            tagCounts = tags.entries.sortedByDescending { it.value }.associate { it.key to it.value },
+            topWorks = works.sortedByDescending { it.pages }.take(MAX_TOP_WORKS),
         )
     }
 
     private fun trim() {
         if (albums.size <= MAX_ALBUMS) return
-        // LinkedHashMap keeps insertion order, and recordAlbum re-inserts on every open, so the
-        // oldest entries are at the front.
         val overflow = albums.size - MAX_ALBUMS
         val iterator = albums.keys.iterator()
         repeat(overflow) {
@@ -137,36 +190,55 @@ class ReadingStatsManager(context: Context) {
         val root = JSONObject()
         val arr = JSONObject()
         albums.forEach { (id, album) ->
+            val chapters = JSONObject()
+            album.chapters.forEach { (cid, page) -> chapters.put(cid, page) }
             arr.put(
                 id,
                 JSONObject()
+                    .put("name", album.name)
                     .put("tags", JSONArray(album.tags))
+                    .put("chapters", chapters)
+                    .put("millis", album.millis)
                     .put("at", album.at),
             )
         }
         root.put("albums", arr)
-        root.put("millis", totalMillis)
         prefs.edit().putString(KEY, root.toString()).apply()
     }
 
     private fun load() {
         val raw = prefs.getString(KEY, null) ?: return
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return
-        totalMillis = root.optLong("millis", 0L).coerceAtLeast(0L)
         val map = root.optJSONObject("albums") ?: return
         map.keys().forEach { id ->
             val o = map.optJSONObject(id) ?: return@forEach
+            val album = Album(
+                name = o.optString("name"),
+                millis = o.optLong("millis", 0L).coerceAtLeast(0L),
+                at = o.optLong("at", 0L),
+            )
             val tagsArr = o.optJSONArray("tags") ?: JSONArray()
-            val tags = (0 until tagsArr.length())
+            album.tags = (0 until tagsArr.length())
                 .mapNotNull { tagsArr.optString(it).takeIf { t -> t.isNotBlank() } }
-            albums[id] = Album(tags.distinct(), o.optLong("at", 0L))
+                .distinct()
+            val chapters = o.optJSONObject("chapters")
+            chapters?.keys()?.forEach { cid ->
+                val page = chapters.optInt(cid, 0)
+                if (page > 0) album.chapters[cid] = page
+            }
+            albums[id] = album
         }
     }
 
     private companion object {
-        const val KEY = "stats_v1"
+        const val KEY = "stats_v2"
         const val MAX_ALBUMS = 500
         const val MAX_TAGS_PER_ALBUM = 12
+        const val MAX_TOP_WORKS = 8
         const val MAX_SESSION_MILLIS = 12L * 60 * 60 * 1000
+
+        /** One work contributes at most this many points per tag, so a 300-chapter series cannot
+         *  flatten every other taste in the profile. */
+        const val TAG_WEIGHT_CAP = 100
     }
 }
