@@ -68,7 +68,9 @@ class UpdateManager(
         .build()
 
     private val downloadHttp: OkHttpClient = baseHttp.newBuilder()
-        .connectTimeout(10, TimeUnit.SECONDS)
+        // Short connect budget: a blocked direct GitHub connection must fall through to a proxy
+        // quickly instead of making the reader wait out a 10 s handshake per source.
+        .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         // A whole APK can legitimately take minutes; only the per-read timeout should fire.
         .callTimeout(0, TimeUnit.MILLISECONDS)

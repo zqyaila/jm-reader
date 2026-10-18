@@ -131,7 +131,7 @@ class ReadingStatsManager(context: Context) {
     @Synchronized
     fun clear() {
         albums.clear()
-        prefs.edit().remove(KEY).apply()
+        prefs.edit().remove(KEY).remove(LEGACY_KEY).apply()
         publish()
     }
 
@@ -232,6 +232,7 @@ class ReadingStatsManager(context: Context) {
 
     private companion object {
         const val KEY = "stats_v2"
+        const val LEGACY_KEY = "stats_v1"
         const val MAX_ALBUMS = 500
         const val MAX_TAGS_PER_ALBUM = 12
         const val MAX_TOP_WORKS = 8
