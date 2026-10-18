@@ -10,9 +10,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,40 +42,24 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
- * Liquid glass, implemented after the **skill-liquid-glass** design spec
- * (https://github.com/JUEMING-006/skill-liquid-glass, built on Kyant0/AndroidLiquidGlass):
+ * Surfaces.
  *
- * | token | value |
- * |---|---|
- * | blur | 2 dp (low blur keeps the content readable) |
- * | lens | 12 dp / 24 dp refraction + chromatic aberration |
- * | fog | neutral, light `FAFAFA` / dark `121212` |
- * | highlight | 0.15 specular sheen |
- * | shadow | 0.08 drop shadow |
- * | innerShadow | 4 dp / 0.1 rim |
+ * Design direction ("ink & ember"): **solid beats frosted**. The previous build wrapped every card,
+ * chip and panel in a translucent pane with a 45° specular sheen and a coloured shadow. On a
+ * screen full of cover art those panes fought the artwork and multiplied visual noise.
  *
- * The library itself is a Compose Multiplatform artifact published against Kotlin 2.4.10 +
- * Compose 1.12; this project is on Kotlin 2.2 / Compose 1.8, so instead of upgrading the whole
- * toolchain the same recipe is built from Compose primitives:
+ * What is left:
  *
- *  1. **Real backdrop sampling** - the page content is recorded once into a [GraphicsLayer]
- *     ([PageBackdropHost]). A glass node that lives *outside* that recording draws the layer,
- *     offset by its own position, into a background-only sub-layer and blurs **that** ([sampled]).
- *     That is genuine "blur what is behind me", without the `Modifier.blur` trap of also blurring
- *     the node's own content.
- *  2. **Fog** - the neutral tint from the spec, raised for contrast (see Color.kt).
- *  3. **Specular highlight** - the diagonal sheen that makes a pane read as glass.
- *  4. **Rim + shadow** - hairline rim light plus a soft drop shadow for lift.
+ *  - [glassSurface] - a quiet, solid card: fill, 1dp hairline, very soft shadow. Used by every
+ *    screen that previously asked for glass, so they all calm down together.
+ *  - [liquidGlass] - the real frosted recipe, now used *only* by the floating bottom navigation,
+ *    which is the one place where content genuinely scrolls underneath and the blur has a job.
  *
- * Refraction (`lens`) needs an AGSL RuntimeShader, which the library drives through its own
- * `BackdropEffectScope`; here it is approximated by the rim light plus the 1 px inner shading.
+ * The contrast guarantee (WCAG AA over white/black artwork under the bar) is unchanged; see
+ * GlassContrastTest.
  */
-// Radii come from the spec's metric tokens (16dp standard / 24dp heavy), plus a capsule for
-// buttons, chips and bars - the spec uses `Capsule()` for every one of those controls.
 val GlassShape: Shape = RoundedCornerShape(GlassSizes.RadiusStandard)
 val GlassShapeLarge: Shape = RoundedCornerShape(GlassSizes.RadiusHeavy)
 val GlassShapeSmall: Shape = RoundedCornerShape(GlassSizes.RadiusInner)
@@ -135,6 +119,10 @@ fun glassRimBrush(): Brush = if (isSystemInDarkTheme()) {
     Brush.verticalGradient(listOf(GlassRimTopLight, GlassRimBottomLight))
 }
 
+/** Hairline that separates two rows/surfaces without drawing a visible box. */
+@Composable
+fun hairlineColor(): Color = MaterialTheme.colorScheme.outlineVariant
+
 // ---------------------------------------------------------------------------
 // Backdrop sampling
 // ---------------------------------------------------------------------------
@@ -142,11 +130,6 @@ fun glassRimBrush(): Brush = if (isSystemInDarkTheme()) {
 /**
  * Background-only layer: draws the page backdrop at this node's position and blurs it. The node's
  * own content is never inside this layer, so it stays sharp.
- *
- * The caller must own a layer that records the page *and must not itself live inside that
- * recording* - sampling your own recording feeds back on itself (the library warns about the same
- * hazard for `layerBackdrop`). `MainScreen` is the only user: it records the tab content and puts
- * the navigation pill outside the recording.
  */
 @Composable
 private fun Modifier.sampledBackdrop(layer: GraphicsLayer, blurRadius: Dp): Modifier {
@@ -161,15 +144,15 @@ private fun Modifier.sampledBackdrop(layer: GraphicsLayer, blurRadius: Dp): Modi
 }
 
 // ---------------------------------------------------------------------------
-// Core recipe
+// Core recipe (bottom bar)
 // ---------------------------------------------------------------------------
 
 /**
- * The glass surface itself: shadow -> [sampled backdrop] -> fog -> specular -> rim.
+ * The frosted bar recipe: shadow -> sampled backdrop -> fog -> hairline rim.
  *
- * @param backdropLayer when non-null the pane samples the live page behind it (use for overlays
- *        placed outside [PageBackdropHost]); when null it is a plain fog pane (use inside the page).
- * @param fog overrides the theme fog (used for tinted surfaces such as the home quick links).
+ * The diagonal specular sheen was removed on purpose. At the density the bar needs for legibility
+ * it stopped reading as glass and started reading as a smudge over the covers, so what is left is
+ * blur + fog + a single rim line.
  */
 @Composable
 fun Modifier.liquidGlass(
@@ -187,7 +170,7 @@ fun Modifier.liquidGlass(
 
     var base = this
     if (elevation > 0.dp) {
-        val shadowTint = Color.Black.copy(alpha = GlassShadowAlpha)
+        val shadowTint = Color.Black.copy(alpha = 0.32f)
         base = base.shadow(
             elevation = elevation,
             shape = shape,
@@ -212,36 +195,19 @@ fun Modifier.liquidGlass(
         Modifier.border(borderWidth, rim, shape)
     }
 
-    return base
-        .drawBehind {
-            // Specular highlight: a sheen along the spec's 45deg axis, the signature "pane of
-            // glass" cue. The gradient is centred on the surface so it stays put as panes resize.
-            val rad = Math.toRadians(GlassHighlightAngle.toDouble())
-            val ux = cos(rad).toFloat()
-            val uy = sin(rad).toFloat()
-            val reach = (size.width + size.height) / 2f
-            val centre = Offset(size.width / 2f, size.height / 2f)
-            drawRect(
-                Brush.linearGradient(
-                    colors = listOf(
-                        GlassSpecular.copy(alpha = GlassHighlightAlpha),
-                        GlassSpecular.copy(alpha = GlassHighlightAlpha * 0.25f),
-                        Color.Transparent,
-                    ),
-                    start = centre - Offset(ux * reach, uy * reach),
-                    end = centre + Offset(ux * reach, uy * reach),
-                ),
-            )
-        }
-        // Rim light, standing in for the spec's 4 dp inner shadow.
-        .then(rimModifier)
+    return base.then(rimModifier)
 }
 
 // ---------------------------------------------------------------------------
 // Public surfaces
 // ---------------------------------------------------------------------------
 
-/** Panel / card. Fog only: it lives inside the page, so it must not sample the page layer. */
+/**
+ * Card / panel.
+ *
+ * A solid fill plus a hairline and an almost invisible shadow. `tint` still wins when a screen
+ * wants a tinted surface (for example an accent wash behind an icon).
+ */
 @Composable
 fun Modifier.glassSurface(
     shape: Shape = GlassShape,
@@ -249,22 +215,28 @@ fun Modifier.glassSurface(
     borderColor: Color? = null,
     borderWidth: Dp = 1.dp,
     elevation: Dp = 8.dp,
-): Modifier = liquidGlass(
-    shape = shape,
-    kind = GlassKind.Panel,
-    elevation = elevation,
-    fog = tint,
-    borderColor = borderColor,
-    borderWidth = borderWidth,
-)
+): Modifier {
+    val fill = tint ?: MaterialTheme.colorScheme.surface
+    val border = borderColor ?: MaterialTheme.colorScheme.outlineVariant
+    var base = this
+    if (elevation > 0.dp) {
+        base = base.shadow(
+            elevation = elevation.coerceAtMost(10.dp) * 0.5f,
+            shape = shape,
+            clip = false,
+            ambientColor = Color.Black.copy(alpha = 0.16f),
+            spotColor = Color.Black.copy(alpha = 0.16f),
+        )
+    }
+    return base
+        .clip(shape)
+        .background(fill)
+        .border(borderWidth, border, shape)
+}
 
 /**
- * Clickable glass with the spec's press behaviour: the surface dips and its highlight brightens,
- * both on damped springs (`GlassAnimationSpecs.Press`), instead of a ripple that would fight the
- * material it is drawn on.
- *
- * Use this in place of `Modifier.clickable` on any glass surface - cards, list rows, nav tabs - so
- * the whole app presses the same way.
+ * Clickable surface with the spec's press behaviour: the surface dips slightly on a damped spring
+ * instead of flashing a ripple across artwork. Used for covers, rows and nav items.
  */
 @Composable
 fun Modifier.glassClickable(
@@ -277,28 +249,18 @@ fun Modifier.glassClickable(
     val progress by animateFloatAsState(
         targetValue = if (pressed && enabled) 1f else 0f,
         animationSpec = GlassMotion.press,
-        label = "glassPress",
+        label = "press",
     )
-    // Spec: 1 -> 1 + 4dp/height. A fixed 1.5% reads the same across the app's very different
-    // surface sizes, and avoids a divide-by-height that is invisible on tall cards.
-    val scale = 1f - 0.015f * progress
+    val scale = 1f - 0.014f * progress
     return this
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .drawWithContent {
             drawContent()
-            // Spec: highlight 0.15 -> 0.15 + 0.35 * progress. Taken literally that would lay a
-            // half-opaque white sheet over the surface (washing out the cover art and the label),
-            // so the press adds a much lighter sheen on top of the resting highlight instead: the
-            // gesture still reads as "the glass lit up" without hiding what is under it.
-            //
-            // The sheen is clipped to [shape] *inside* the draw call rather than by
-            // `Modifier.clip`: clipping the node would also clip away the drop shadow that
-            // `glassSurface` paints outside its bounds.
             if (progress > 0f) {
                 val outline = shape.createOutline(size, layoutDirection, this)
                 val clip = Path().apply { addOutline(outline) }
                 clipPath(clip) {
-                    drawRect(GlassSpecular.copy(alpha = 0.10f * progress))
+                    drawRect(GLASS_PRESS_SHEEN.copy(alpha = 0.05f * progress))
                 }
             }
         }
@@ -310,6 +272,8 @@ fun Modifier.glassClickable(
         )
 }
 
+private val GLASS_PRESS_SHEEN = Color.White
+
 /** Panel container. */
 @Composable
 fun GlassPanel(
@@ -320,12 +284,7 @@ fun GlassPanel(
     content: @Composable () -> Unit,
 ) {
     Box(
-        modifier.liquidGlass(
-            shape = shape,
-            kind = GlassKind.Panel,
-            blurRadius = blurRadius,
-            fog = tint,
-        ),
+        modifier.glassSurface(shape = shape, tint = tint, elevation = 0.dp),
     ) {
         content()
     }
@@ -334,9 +293,6 @@ fun GlassPanel(
 /**
  * Bar (top bar / bottom navigation). Full-bleed by default; pass a rounded [shape] plus outer
  * padding for the floating "pill" look.
- *
- * [backdropLayer] is optional on purpose: pass the page recording when the bar lives outside it to
- * get the real blurred backdrop behind the bar.
  */
 @Composable
 fun GlassBar(
@@ -362,56 +318,30 @@ fun GlassBar(
     }
 }
 
-/** Full-screen app background: gradient plus soft colour blobs for the glass to refract. */
+/**
+ * Full-screen app background.
+ *
+ * Quiet by design: one vertical ink gradient plus a single warm glow in the top corner, at ~10%
+ * opacity. No coloured blobs, no blurred circles - the covers supply all the colour on screen.
+ */
 @Composable
 fun AppBackdrop(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().background(backdropBrush())) {
-        Box(
-            Modifier
-                .size(360.dp)
-                .offset(x = (-90).dp, y = (-60).dp)
-                .platformBlur(80.dp)
-                .background(
+    val dark = isSystemInDarkTheme()
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(backdropBrush())
+            .drawBehind {
+                drawRect(
                     Brush.radialGradient(
-                        listOf(BrandOrange.copy(alpha = BackdropBlobAlpha), Color.Transparent),
+                        colors = listOf(
+                            BrandOrange.copy(alpha = if (dark) 0.10f else 0.07f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.82f, size.height * 0.02f),
+                        radius = size.width * 1.05f,
                     ),
-                ),
-        )
-        Box(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .size(340.dp)
-                .offset(x = 70.dp, y = 100.dp)
-                .platformBlur(80.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(GlassAccentBlue.copy(alpha = BackdropBlobAlpha), Color.Transparent),
-                    ),
-                ),
-        )
-        Box(
-            Modifier
-                .align(Alignment.CenterEnd)
-                .size(280.dp)
-                .offset(x = 130.dp, y = (-40).dp)
-                .platformBlur(90.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(GlassAccentViolet.copy(alpha = BackdropBlobAlpha * 0.85f), Color.Transparent),
-                    ),
-                ),
-        )
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .size(240.dp)
-                .offset(x = (-60).dp, y = 60.dp)
-                .platformBlur(90.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(GlassAccentTeal.copy(alpha = BackdropBlobAlpha * 0.7f), Color.Transparent),
-                    ),
-                ),
-        )
-    }
+                )
+            },
+    )
 }

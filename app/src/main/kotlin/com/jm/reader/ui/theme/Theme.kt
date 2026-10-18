@@ -7,39 +7,60 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// `internal` (not private) so GlassContrastTest can assert the canvas opacity: the page canvas
-// must stay near-opaque, otherwise body text ends up sitting on the gradient again.
+/**
+ * Colour schemes.
+ *
+ * Both schemes are *opaque* now. Translucency is reserved for the one floating bar; a page canvas
+ * that let a coloured gradient show through every card was the reason the old build looked busy.
+ *
+ * Primary is theme-dependent on purpose: ember `#FF8A4C` is legible on ink but only ~2.4:1 on
+ * paper, so the light scheme uses `#C2410C` for anything drawn as text or an icon. Filled buttons
+ * therefore read correctly in both themes without a second "button colour" token.
+ */
 internal val DarkColors = darkColorScheme(
     primary = BrandOrange,
-    onPrimary = Color.White,
-    primaryContainer = BrandOrangeDark,
-    onPrimaryContainer = Color.White,
+    onPrimary = Color(0xFF1A0D06),
+    primaryContainer = Color(0xFF3A1D10),
+    onPrimaryContainer = BrandOrangeSoft,
     secondary = BrandOrangeSoft,
-    onSecondary = DarkBg,
-    // Bring the backdrop up to every screen: text surfaces carry their own fog, so the canvas can
-    // be quite translucent (GlassContrastTest checks canvas text over the brightest blob).
-    background = DarkBg.copy(alpha = CanvasAlphaDark),
+    onSecondary = Color(0xFF1A0D06),
+    secondaryContainer = Color(0xFF2A211C),
+    onSecondaryContainer = BrandOrangeSoft,
+    tertiary = BrandOrangeSoft,
+    onTertiary = Color(0xFF1A0D06),
+    background = DarkBg,
     onBackground = TextPrimaryDark,
-    surface = DarkSurface.copy(alpha = 0.88f),
+    surface = DarkSurface,
     onSurface = TextPrimaryDark,
-    surfaceVariant = DarkSurfaceVariant.copy(alpha = 0.86f),
+    surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = TextSecondaryDark,
     outline = DarkOutline,
+    outlineVariant = HairlineDark,
+    error = Color(0xFFFF6B6B),
+    onError = Color(0xFF1A0D06),
 )
 
 internal val LightColors = lightColorScheme(
-    primary = BrandOrange,
+    primary = BrandOrangeDeep,
     onPrimary = Color.White,
-    primaryContainer = BrandOrangeSoft,
-    onPrimaryContainer = LightBg,
+    primaryContainer = Color(0xFFFFE3D2),
+    onPrimaryContainer = Color(0xFF5A1C00),
     secondary = BrandOrangeDark,
     onSecondary = Color.White,
-    background = LightBg.copy(alpha = CanvasAlphaLight),
+    secondaryContainer = Color(0xFFFFEBDD),
+    onSecondaryContainer = Color(0xFF5A1C00),
+    tertiary = BrandOrangeDark,
+    onTertiary = Color.White,
+    background = LightBg,
     onBackground = TextPrimaryLight,
-    surface = LightSurface.copy(alpha = 0.90f),
+    surface = LightSurface,
     onSurface = TextPrimaryLight,
-    surfaceVariant = LightSurfaceVariant.copy(alpha = 0.88f),
+    surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = TextSecondaryLight,
+    outline = LightOutline,
+    outlineVariant = HairlineLight,
+    error = Color(0xFFB3261E),
+    onError = Color.White,
 )
 
 @Composable
@@ -49,10 +70,8 @@ fun JMReaderTheme(
 ) {
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
-        // M3 Expressive hierarchy + shape scale. Both are wired here (and nowhere else) so every
-        // screen, including the ones that still look "old", inherits the new type scale at once -
-        // `MaterialTheme.typography.*` is used by 22 files, so this is the single highest-leverage
-        // change in the refactor. See Type.kt and Shapes.kt for the rationale per token.
+        // M3 Expressive hierarchy + shape scale, wired in exactly one place so every screen
+        // inherits it. See Type.kt / Shapes.kt for the per-token rationale.
         typography = AppTypography,
         shapes = AppShapes,
         content = content,

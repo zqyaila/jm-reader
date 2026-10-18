@@ -287,7 +287,7 @@ fun SearchScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = { AppTopBar(s.search, onBack = { navController.popBackStack() }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->

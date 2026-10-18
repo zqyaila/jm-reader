@@ -102,7 +102,7 @@ fun RegisterScreen(navController: NavHostController) {
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = { AppTopBar(s.register, onBack = { navController.popBackStack() }) },
     ) { padding ->
         Column(

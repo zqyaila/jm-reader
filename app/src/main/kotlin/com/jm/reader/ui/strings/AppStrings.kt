@@ -223,6 +223,11 @@ data class AppStrings(
     val commentHideReplies: String,
     val commentLiked: String,
     val commentLikeFailed: String,
+    // Home / weekly redesign
+    val recentReads: String,
+    val viewAll: String,
+    val weekHint: String,
+    val homeGreeting: String,
 ) {
     companion object {
         fun forLanguage(lang: UiLanguage): AppStrings = when (lang) {
@@ -427,6 +432,10 @@ val ZhCN = AppStrings(
     commentHideReplies = "收起回复",
     commentLiked = "已点赞",
     commentLikeFailed = "点赞失败",
+    recentReads = "最近阅读",
+    viewAll = "查看全部",
+    weekHint = "按本周收藏量排行，每周一更新",
+    homeGreeting = "今晚读点什么",
 )
 
 /** 繁體中文 */
@@ -623,6 +632,10 @@ val ZhTW = AppStrings(
     commentHideReplies = "收起回覆",
     commentLiked = "已點讚",
     commentLikeFailed = "點讚失敗",
+    recentReads = "最近閱讀",
+    viewAll = "查看全部",
+    weekHint = "按本週收藏量排行，每週一更新",
+    homeGreeting = "今晚讀點什麼",
 )
 
 /** English */
@@ -819,4 +832,8 @@ val En = AppStrings(
     commentHideReplies = "Hide replies",
     commentLiked = "Liked",
     commentLikeFailed = "Could not like",
+    recentReads = "Recently read",
+    viewAll = "See all",
+    weekHint = "Ranked by saves this week · refreshed every Monday",
+    homeGreeting = "What are we reading tonight?",
 )

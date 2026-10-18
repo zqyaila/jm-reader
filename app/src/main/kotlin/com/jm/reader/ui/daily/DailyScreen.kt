@@ -147,7 +147,7 @@ fun DailyScreen(navController: NavHostController) {
 
     Scaffold(
         // Near-opaque canvas; the check-in card is the only glass surface here.
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = { AppTopBar(s.checkIn, onBack = { navController.popBackStack() }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->

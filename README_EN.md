@@ -37,15 +37,18 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
 - 🛡️ **Crash report on next launch** — if the app crashes, the stack trace is saved and shown
   on the next launch with a one-tap **copy log** button
 - 👤 **Member features** — login / register, favorites, viewing history, daily check-in, profile
-- 🪟 **Liquid-glass UI** — built to the [skill-liquid-glass](https://github.com/JUEMING-006/skill-liquid-glass)
-  spec (on [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)): the page is
-  recorded into a layer and the floating navigation bar genuinely samples and blurs what is behind
-  it (2 dp blur + neutral fog + 45° specular + rim light + drop shadow), with content scrolling
-  underneath. Sizes and radii come from the spec's token table (64 dp capsule bar / 56 dp tabs,
-  48 dp buttons, 16 dp cards) and every glass surface presses with the spec's damped spring instead
-  of a ripple. The top bar keeps Material's default height on purpose: `TopAppBar` measures its own
-  status-bar inset, so forcing the spec's 56 dp clips the title under the system bar. Light/dark,
-  effective on API 31+, degrading to a translucent haze below that
+- 🎨 **UI ("ink & ember")** — ink-coloured canvas with a single ember accent, so **cover art is the
+  only saturated thing on screen**. Cards, rows and forms are solid surfaces with a 1 dp hairline
+  instead of stacked frosted panes; glass survives only in the floating bottom bar (the page is
+  recorded into a layer and the bar genuinely samples and blurs what is behind it). Home is a large
+  hero carousel + recently-read strip + 3-column cover grid, the weekly chart numbers its covers,
+  and the detail page has one header (blurred cover wash + poster + title). Every surface presses
+  with a damped spring instead of a ripple. Light/dark, glass effective on API 31+, degrading to an
+  opaque haze below that. The top bar keeps Material's default height on purpose: `TopAppBar`
+  measures its own status-bar inset, so forcing 56 dp clips the title under the system bar
+- 🧭 **Back without losing your place** — home, the weekly chart, category lists and search keep
+  their items and scroll position in a ViewModel owned by their `NavBackStackEntry`, so opening a
+  comic and coming back leaves you exactly where you were instead of reloading page one
 - 🎬 **Secondary content** — novels, movies, games, blogs, forum
 - 🖥️ **Windows desktop build** — a separate `:desktop` module (Compose Multiplatform) reusing the
   same protocol implementation and design language: browse / search / detail / read, packaged into

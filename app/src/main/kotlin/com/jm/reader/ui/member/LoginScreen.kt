@@ -87,7 +87,7 @@ fun LoginScreen(navController: NavHostController, initialUsername: String = "") 
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = { AppTopBar(s.login, onBack = { navController.popBackStack() }) },
     ) { padding ->
         Column(

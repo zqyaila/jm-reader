@@ -109,7 +109,7 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
         contentWindowInsets = WindowInsets(0),
         // Near-opaque canvas so list rows and labels keep their contrast; the tab header above
         // is the glass surface.
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = Color.Transparent,
         topBar = {
             GlassBar(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth()) {

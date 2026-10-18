@@ -2,7 +2,6 @@ package com.jm.reader.ui
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -38,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -50,10 +50,6 @@ import com.jm.reader.ui.home.HomeScreen
 import com.jm.reader.ui.library.LibraryScreen
 import com.jm.reader.ui.member.MemberScreen
 import com.jm.reader.ui.theme.AppMotion
-import com.jm.reader.ui.theme.AppSpacing
-import com.jm.reader.ui.theme.BrandOrangeDeep
-import com.jm.reader.ui.theme.BrandOrangeSoft
-import com.jm.reader.ui.theme.DarkBg
 import com.jm.reader.ui.theme.GlassBar
 import com.jm.reader.ui.theme.GlassCapsule
 import com.jm.reader.ui.theme.GlassKind
@@ -110,8 +106,12 @@ fun MainScreen(navController: NavHostController) {
 }
 
 /**
- * Floating glass pill with a sliding selection indicator (spring, damped) - the material from the
- * skill's `LiquidBottomTabs`, simplified to a click-driven indicator.
+ * Floating glass pill with a sliding selection indicator (spring, damped).
+ *
+ * Refactor notes: the indicator used to be a *solid accent pill* behind the whole tab, which made
+ * the bar the loudest thing on screen and left the selected label fighting a saturated orange
+ * field. It is now a 14% accent wash with an accent icon/label - the bar recedes, the selected tab
+ * is still unmistakable.
  */
 @Composable
 private fun GlassBottomNav(
@@ -121,12 +121,7 @@ private fun GlassBottomNav(
     modifier: Modifier = Modifier,
 ) {
     val s = LocalAppStrings.current
-    val dark = isSystemInDarkTheme()
-    // Selected item = a solid accent pill with an explicit on-colour, which is what makes the
-    // label legible regardless of what the glass samples: #FFB74D on #121212 is 10:1, and the deep
-    // orange on white is 5.6:1. (Tinting the pill instead would leave the label at ~3.4:1.)
-    val accent = if (dark) BrandOrangeSoft else BrandOrangeDeep
-    val onAccent = if (dark) DarkBg else Color.White
+    val accent = MaterialTheme.colorScheme.primary
     val idle = MaterialTheme.colorScheme.onSurfaceVariant
     val items = listOf(
         s.home to Icons.Filled.Home,
@@ -147,28 +142,23 @@ private fun GlassBottomNav(
             Modifier
                 .fillMaxWidth()
                 .height(GlassSizes.BottomBarHeight)
-                .padding(AppSpacing.Inline),
+                .padding(horizontal = 8.dp, vertical = 6.dp),
         ) {
             val itemWidth = maxWidth / items.size
-            // Damped spring, so the indicator glides and settles like a liquid rather than snapping.
-            // `spatialFast` is the Expressive token for a short *spatial* move, and it is the same
-            // spring the glass press/settle uses - so the pill and the pane it sits on move as one.
             val position by animateFloatAsState(
                 targetValue = selected.toFloat(),
                 animationSpec = AppMotion.spatialFast,
                 label = "navIndicator",
             )
 
-            // `Modifier.offset { }` works in **pixels**, so the dp-per-item has to be converted.
-            // (Using `itemWidth.value` here made the pill travel only 1/density of the way, which
-            // is why it appeared not to follow the selection.)
             Box(
                 Modifier
                     .offset { IntOffset((position * itemWidth.toPx()).roundToInt(), 0) }
                     .width(itemWidth)
                     .height(GlassSizes.BottomTabHeight)
-                    .clip(GlassCapsule)
-                    .background(accent),
+                    .padding(horizontal = 6.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(accent.copy(alpha = 0.14f)),
             )
 
             Row(
@@ -177,14 +167,12 @@ private fun GlassBottomNav(
             ) {
                 items.forEachIndexed { index, (label, icon) ->
                     val active = index == selected
-                    val tint = if (active) onAccent else idle
+                    val tint = if (active) accent else idle
                     Column(
                         Modifier
                             .width(itemWidth)
                             .height(GlassSizes.BottomTabHeight)
-                            // Spec press feedback (spring dip + sheen) instead of a ripple, so the
-                            // tab responds the same way every other glass surface does.
-                            .glassClickable(shape = GlassCapsule, onClick = { onSelect(index) }),
+                            .glassClickable(shape = RoundedCornerShape(16.dp), onClick = { onSelect(index) }),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -192,17 +180,17 @@ private fun GlassBottomNav(
                             icon,
                             contentDescription = label,
                             tint = tint,
-                            // 24dp, not 22: Material icons are drawn on a 24dp grid, so any other
-                            // size resamples every stroke and the set looks subtly soft next to
-                            // the 24dp icons used everywhere else in the app.
-                            modifier = Modifier.size(24.dp),
+                            // 24dp: Material icons are drawn on a 24dp grid.
+                            modifier = Modifier.size(23.dp),
                         )
                         Text(
                             label,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            fontSize = 10.sp,
+                            lineHeight = 13.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                             color = tint,
                             maxLines = 1,
+                            modifier = Modifier.padding(top = 1.dp),
                         )
                     }
                 }

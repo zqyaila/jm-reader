@@ -177,11 +177,17 @@ class GlassContrastTest {
         )
     }
 
+    /**
+     * The redesign removed the "everything is glass" premise: the page canvas is now opaque, and
+     * only the floating bottom bar samples what is behind it. That is a deliberate contract, not an
+     * accident - a translucent canvas was what let the coloured backdrop show through every card
+     * and made body text depend on whatever blob happened to be underneath.
+     */
     @Test
-    fun `canvas stays translucent enough for the glass to have something to refract`() {
-        assertTrue("dark canvas too opaque", DarkColors.background.alpha <= 0.75f)
-        assertTrue("light canvas too opaque", LightColors.background.alpha <= 0.85f)
-        assertTrue("canvas must still carry text", DarkColors.background.alpha >= 0.50f)
-        assertTrue("backdrop blobs must stay visible", BackdropBlobAlpha in 0.15f..0.45f)
+    fun `canvas is opaque so body text never sits on the backdrop`() {
+        assertEquals(1f, DarkColors.background.alpha)
+        assertEquals(1f, LightColors.background.alpha)
+        // The single warm glow is a whisper, not a coloured shape behind the UI.
+        assertTrue("backdrop glow is too strong", BackdropBlobAlpha in 0.15f..0.45f)
     }
 }
