@@ -53,9 +53,8 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   skipping the previous pick on consecutive taps (one `/random_recommend` request)
 - 📊 **Local reading stats** — "Me → Reading stats": works read, time read, pages read, the tag mix
   and "most read". **Only entering the reader counts** (opening a detail page does not), and each
-  work's weight is the **number of pages read**, so a 120-page work beats a 6-page bounce. A single
-  work is capped at 100 points so one long series cannot flatten every other taste. Device-only,
-  no account, clearable in one tap
+  work's weight is exactly the **number of pages read** (linear: a 200-page work contributes 200),
+  so a 120-page work beats a 6-page bounce. Device-only, no account, clearable in one tap
 - 🔮 **Guess you like** — picks a tag with probability proportional to that weight, searches it and
   opens a random result. Favourite genres are more likely but not the only outcome (up to three tags
   are tried, then it falls back to `/random_recommend`)

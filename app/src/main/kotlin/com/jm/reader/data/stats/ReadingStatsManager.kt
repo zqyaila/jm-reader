@@ -22,8 +22,9 @@ import org.json.JSONObject
  *  - `tags`: the work's tags, captured when the reader loads its metadata.
  *
  * The tag weights that feed [GuessEngine] are **pages read**, not "works opened": a 120-page work
- * the reader actually finished should count far more than a 6-page sample they bounced off. A
- * per-work cap keeps one very long series from drowning every other taste.
+ * the reader actually finished should count far more than a 6-page sample they bounced off. The
+ * weight is linear - a 200-page work contributes 200 to each of its tags - so what the stats screen
+ * shows ("N 页") is exactly what the recommendation uses.
  *
  * Everything is on-device; there is no account and no upload.
  */
@@ -40,7 +41,7 @@ class ReadingStatsManager(context: Context) {
         val albumCount: Int = 0,
         val totalMillis: Long = 0L,
         val totalPages: Int = 0,
-        /** tag -> weighted pages read (see [TAG_WEIGHT_CAP]). */
+        /** tag -> pages read in works carrying it (linear, no per-work cap). */
         val tagCounts: Map<String, Int> = emptyMap(),
         val topWorks: List<WorkRead> = emptyList(),
     ) {
@@ -159,7 +160,10 @@ class ReadingStatsManager(context: Context) {
                 albumCount++
                 totalPages += pages
                 totalMillis += album.millis
-                val weight = pages.coerceAtMost(TAG_WEIGHT_CAP).coerceAtLeast(1)
+                // Linear on purpose: the UI reports "N pages", so the weight behind the guess must
+                // be that same N. (An earlier build capped this at 100, which silently disagreed
+                // with the page count shown next to the tag.)
+                val weight = pages.coerceAtLeast(1)
                 album.tags.forEach { tag -> tags[tag] = (tags[tag] ?: 0) + weight }
                 works += WorkRead(albumId = id, name = album.name, pages = pages, millis = album.millis)
             }
@@ -237,9 +241,5 @@ class ReadingStatsManager(context: Context) {
         const val MAX_TAGS_PER_ALBUM = 12
         const val MAX_TOP_WORKS = 8
         const val MAX_SESSION_MILLIS = 12L * 60 * 60 * 1000
-
-        /** One work contributes at most this many points per tag, so a 300-chapter series cannot
-         *  flatten every other taste in the profile. */
-        const val TAG_WEIGHT_CAP = 100
     }
 }
