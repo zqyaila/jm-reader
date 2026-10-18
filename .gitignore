@@ -28,3 +28,6 @@ TEST_REPORT.md
 .workbuddy/
 # Reverse-engineering scratch material (reference scripts + __pycache__)
 .refs/
+
+# Kotlin build cache
+.kotlin/

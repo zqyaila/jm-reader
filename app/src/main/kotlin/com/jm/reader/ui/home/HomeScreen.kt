@@ -131,6 +131,9 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
     var loadingMore by vm.loadingMore
 
     val recent by history.entries.collectAsState()
+    // Entries that only carry reading progress can have no title yet; they would render as a blank
+    // caption and look like a bug, so they wait until the album has been opened once.
+    val recentItems = recent.filter { it.name.isNotBlank() }
 
     suspend fun loadInitial() {
         state = state.copy(loading = true, error = null)
@@ -189,8 +192,8 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
         }
     }
     // Five full-span rows precede the feed: hero, dots, quick links, recent reads, section title.
-    val leadingRows = if (recent.isEmpty()) 4 else 5
-    LaunchedEffect(gridState, state.latest.size, recent.size) {
+    val leadingRows = if (recentItems.isEmpty()) 4 else 5
+    LaunchedEffect(gridState, state.latest.size, recentItems.size) {
         snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { last ->
                 if (last != null && !state.loading && last >= leadingRows + state.latest.size - 8) {
@@ -236,11 +239,11 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                         QuickLinks(navController)
                     }
 
-                    if (recent.isNotEmpty()) {
+                    if (recentItems.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Column {
                                 SectionHeader(title = s.recentReads)
-                                RecentRow(repo, recent.take(10)) { entry ->
+                                RecentRow(repo, recentItems.take(10)) { entry ->
                                     navController.navigate(Routes.comicDetail(entry.albumId))
                                 }
                             }
