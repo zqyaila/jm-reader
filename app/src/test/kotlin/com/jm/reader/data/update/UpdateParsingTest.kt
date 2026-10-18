@@ -48,6 +48,15 @@ class UpdateParsingTest {
     }
 
     @Test
+    fun `release install is not offered a debug-only apk`() {
+        val debugOnly = """{"tag_name":"latest","assets":[
+            {"name":"JMReader-android-debug.apk","browser_download_url":"https://example/debug"}]}"""
+        assertNull(parseRelease(debugOnly, preferDebugAsset = false))
+        // A debug install may still take it.
+        assertEquals("JMReader-android-debug.apk", parseRelease(debugOnly, preferDebugAsset = true)?.assetName)
+    }
+
+    @Test
     fun `a release without apk assets yields null`() {
         val noApk = """{"tag_name":"latest","assets":[{"name":"x.msi"}]}"""
         assertNull(parseRelease(noApk, preferDebugAsset = true))

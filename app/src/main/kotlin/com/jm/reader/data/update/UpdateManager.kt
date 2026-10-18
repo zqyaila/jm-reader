@@ -284,8 +284,11 @@ internal fun parseRelease(json: String, preferDebugAsset: Boolean): UpdateManage
     if (apks.isEmpty()) return null
 
     val wanted = if (preferDebugAsset) "debug" else "release"
-    val asset = apks.firstOrNull { it.optString("name").contains(wanted, ignoreCase = true) }
-        ?: apks.first()
+    val match = apks.firstOrNull { it.optString("name").contains(wanted, ignoreCase = true) }
+    // A release-signed install must never be offered the debug APK: the signatures differ, so the
+    // installer would reject it after a full download. Debug installs may fall back to whatever
+    // APK exists (local development builds).
+    val asset = match ?: if (preferDebugAsset) apks.first() else return null
 
     val digest = asset.optString("digest").removePrefix("sha256:").takeIf { it.isNotBlank() }
     return UpdateManager.UpdateInfo(
