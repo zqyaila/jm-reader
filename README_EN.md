@@ -49,6 +49,8 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
 - 🧭 **Back without losing your place** — home, the weekly chart, category lists and search keep
   their items and scroll position in a ViewModel owned by their `NavBackStackEntry`, so opening a
   comic and coming back leaves you exactly where you were instead of reloading page one
+- 🎲 **Surprise me** — a dice row on home opens a random work straight to its detail page,
+  skipping the previous pick on consecutive taps (one `/random_recommend` request)
 - 🎬 **Secondary content** — novels, movies, games, blogs, forum
 - 🖥️ **Windows desktop build** — a separate `:desktop` module (Compose Multiplatform) reusing the
   same protocol implementation and design language: browse / search / detail / read, packaged into
