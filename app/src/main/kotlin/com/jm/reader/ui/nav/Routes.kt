@@ -20,6 +20,7 @@ object Routes {
      */
     const val SEARCH = "search?mode={mode}&q={q}"
     const val CATEGORIES = "categories"
+    const val STATS = "stats"
     const val WEEK = "week"
     const val DAILY = "daily"
     const val HOT_TAGS = "hotTags"

@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -90,6 +91,9 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
                 }
             }
         }
+
+        // Local-only, so it is offered whether or not the reader ever logged in.
+        MenuItem(Icons.Filled.Insights, s.statsTitle) { navController.navigate(Routes.STATS) }
 
         // Language switcher
         Text(s.language, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(16.dp, 20.dp, 16.dp, 8.dp))

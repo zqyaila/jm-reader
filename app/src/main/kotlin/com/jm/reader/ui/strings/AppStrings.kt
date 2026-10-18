@@ -230,6 +230,20 @@ data class AppStrings(
     val homeGreeting: String,
     val randomComic: String,
     val randomHint: String,
+    // Local reading stats + weighted guess
+    val statsTitle: String,
+    val statsAlbums: String,
+    val statsDuration: String,
+    val statsTags: String,
+    val statsTagShare: String,
+    val statsEmpty: String,
+    val statsReset: String,
+    val statsResetConfirm: String,
+    val guessYouLike: String,
+    val guessHint: String,
+    val guessNeedData: String,
+    val hoursMinutesFmt: String,     // "%1\$d 小时 %2\$d 分"
+    val minutesOnlyFmt: String,      // "%1\$d 分钟"
 ) {
     companion object {
         fun forLanguage(lang: UiLanguage): AppStrings = when (lang) {
@@ -440,6 +454,19 @@ val ZhCN = AppStrings(
     homeGreeting = "今晚读点什么",
     randomComic = "随机一本",
     randomHint = "不知道看什么？交给运气",
+    statsTitle = "阅读统计",
+    statsAlbums = "本子数目",
+    statsDuration = "观看时长",
+    statsTags = "标签数",
+    statsTagShare = "观看标签占比",
+    statsEmpty = "还没有阅读记录，先去看几本吧",
+    statsReset = "清除本地统计",
+    statsResetConfirm = "将清空本机的标签、时长与本子计数，历史记录不受影响。",
+    guessYouLike = "猜你想看",
+    guessHint = "按你常看的标签抽一本",
+    guessNeedData = "先读几本，我才能猜你想看",
+    hoursMinutesFmt = "%1\$d 小时 %2\$d 分",
+    minutesOnlyFmt = "%1\$d 分钟",
 )
 
 /** 繁體中文 */
@@ -642,6 +669,19 @@ val ZhTW = AppStrings(
     homeGreeting = "今晚讀點什麼",
     randomComic = "隨機一本",
     randomHint = "不知道看什麼？交給運氣",
+    statsTitle = "閱讀統計",
+    statsAlbums = "本子數目",
+    statsDuration = "觀看時長",
+    statsTags = "標籤數",
+    statsTagShare = "觀看標籤佔比",
+    statsEmpty = "還沒有閱讀記錄，先去看幾本吧",
+    statsReset = "清除本機統計",
+    statsResetConfirm = "將清空本機的標籤、時長與本子計數，歷史記錄不受影響。",
+    guessYouLike = "猜你想看",
+    guessHint = "按你常看的標籤抽一本",
+    guessNeedData = "先讀幾本，我才能猜你想看",
+    hoursMinutesFmt = "%1\$d 小時 %2\$d 分",
+    minutesOnlyFmt = "%1\$d 分鐘",
 )
 
 /** English */
@@ -844,4 +884,17 @@ val En = AppStrings(
     homeGreeting = "What are we reading tonight?",
     randomComic = "Surprise me",
     randomHint = "Can't decide? Let luck pick one",
+    statsTitle = "Reading stats",
+    statsAlbums = "Works read",
+    statsDuration = "Time read",
+    statsTags = "Tags",
+    statsTagShare = "Tag share",
+    statsEmpty = "No reading history yet - open a few works first",
+    statsReset = "Clear local stats",
+    statsResetConfirm = "Clears tags, reading time and the work count on this device. History is untouched.",
+    guessYouLike = "Guess you like",
+    guessHint = "A random pick weighted by your tags",
+    guessNeedData = "Read a few works first, then I can guess",
+    hoursMinutesFmt = "%1\$d h %2\$d min",
+    minutesOnlyFmt = "%1\$d min",
 )

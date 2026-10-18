@@ -29,6 +29,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Forum
@@ -63,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -78,10 +80,12 @@ import com.jm.reader.data.history.HistoryManager
 import com.jm.reader.data.model.ComicListItem
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.repo.RepoResult
+import com.jm.reader.data.stats.GuessEngine
 import com.jm.reader.ui.BottomNavReserve
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
+import com.jm.reader.ui.LocalStats
 import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
@@ -125,6 +129,9 @@ internal class HomeViewModel : ViewModel() {
 
     /** Last work the dice landed on, so tapping it twice does not open the same page again. */
     var lastRandomId: String? = null
+
+    /** Same, for the tag-weighted pick. */
+    var lastGuessId: String? = null
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -144,8 +151,11 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
     // Entries that only carry reading progress can have no title yet; they would render as a blank
     // caption and look like a bug, so they wait until the album has been opened once.
     val recentItems = recent.filter { it.name.isNotBlank() }
+    val stats = LocalStats.current
+    val statsSnapshot by stats.snapshot.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var randomLoading by remember { mutableStateOf(false) }
+    var guessLoading by remember { mutableStateOf(false) }
 
     suspend fun loadInitial() {
         state = state.copy(loading = true, error = null)
@@ -198,6 +208,66 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
             }
         } finally {
             randomLoading = false
+        }
+    }
+
+    /**
+     * "Guess you like": pick a tag with probability proportional to how many works carrying it the
+     * reader has opened, search that tag, then pick one of the results at random.
+     *
+     * Up to three weighted tags are tried before falling back to `/random_recommend`, because a
+     * tag can legitimately have no results (or only the work just read). Tag choice and ranking
+     * live in [GuessEngine], which is pure and unit-tested.
+     */
+    suspend fun guess() {
+        if (guessLoading) return
+        guessLoading = true
+        try {
+            val counts = statsSnapshot.tagCounts
+            if (counts.isEmpty()) {
+                snackbar.showSnackbar(s.guessNeedData)
+                return
+            }
+            var chosen: ComicListItem? = null
+            // Pick without replacement, so three attempts mean three distinct tastes.
+            val remaining = counts.toMutableMap()
+            var attempt = 0
+            while (attempt < 3 && chosen == null && remaining.isNotEmpty()) {
+                attempt++
+                val tag = GuessEngine.pickTag(remaining) ?: break
+                remaining.remove(tag)
+                when (val r = repo.adaptiveSearch(tag)) {
+                    is RepoResult.Ok -> {
+                        val pool = r.data.items.filter {
+                            it.id.isNotBlank() && it.id != vm.lastGuessId
+                        }
+                        if (pool.isNotEmpty()) chosen = pool.random()
+                    }
+                    is RepoResult.Err -> Unit // try the next taste instead of failing outright
+                }
+            }
+            // No tag produced a usable page (or only the previous pick): fall back to a blind roll.
+            if (chosen == null) {
+                when (val r = repo.randomRecommend()) {
+                    is RepoResult.Ok -> chosen = r.data
+                        .filter { it.id.isNotBlank() && it.id != vm.lastGuessId }
+                        .ifEmpty { r.data }
+                        .randomOrNull()
+                    is RepoResult.Err -> {
+                        snackbar.showSnackbar(r.message)
+                        return
+                    }
+                }
+            }
+            val pick = chosen
+            if (pick == null) {
+                snackbar.showSnackbar(s.noResult)
+            } else {
+                vm.lastGuessId = pick.id
+                navController.navigate(Routes.comicDetail(pick.id))
+            }
+        } finally {
+            guessLoading = false
         }
     }
 
@@ -286,11 +356,22 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                     }
 
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        RandomEntry(
+                        SurpriseEntry(
+                            icon = Icons.Filled.Shuffle,
                             label = s.randomComic,
                             hint = s.randomHint,
                             loading = randomLoading,
                             onClick = { scope.launch { surprise() } },
+                        )
+                    }
+
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        SurpriseEntry(
+                            icon = Icons.Filled.AutoAwesome,
+                            label = s.guessYouLike,
+                            hint = s.guessHint,
+                            loading = guessLoading,
+                            onClick = { scope.launch { guess() } },
                         )
                     }
 
@@ -345,7 +426,8 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
  * As a row it also has space for the one line that explains what the button does.
  */
 @Composable
-private fun RandomEntry(
+private fun SurpriseEntry(
+    icon: ImageVector,
     label: String,
     hint: String,
     loading: Boolean,
@@ -369,7 +451,7 @@ private fun RandomEntry(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                Icons.Filled.Shuffle,
+                icon,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(19.dp),

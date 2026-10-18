@@ -6,6 +6,7 @@ import com.jm.reader.data.history.HistoryManager
 import com.jm.reader.data.history.SearchHistoryManager
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.session.SessionManager
+import com.jm.reader.data.stats.ReadingStatsManager
 import com.jm.reader.ui.strings.AppStrings
 import com.jm.reader.ui.strings.LanguageManager
 
@@ -35,4 +36,9 @@ val LocalHistoryManager = staticCompositionLocalOf<HistoryManager> {
 
 val LocalSearchHistoryManager = staticCompositionLocalOf<SearchHistoryManager> {
     error("LocalSearchHistoryManager not provided")
+}
+
+/** On-device reading statistics (tags, time, distinct works). */
+val LocalStats = staticCompositionLocalOf<ReadingStatsManager> {
+    error("LocalStats not provided")
 }

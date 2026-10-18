@@ -81,6 +81,7 @@ import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
+import com.jm.reader.ui.LocalStats
 import com.jm.reader.ui.components.AppTopBar
 import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
@@ -115,6 +116,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
     val repo = LocalRepository.current
     val session = LocalSession.current
     val history = LocalHistoryManager.current
+    val stats = LocalStats.current
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -129,6 +131,9 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                 // Opening an album is what the local history tab records.
                 if (r.data.id.isNotBlank()) {
                     history.record(r.data.id, r.data.name, r.data.authors.firstOrNull(), r.data.addtime)
+                    // Local taste profile: which tags this reader actually opens. Feeds the stats
+                    // screen and the weighted "guess you like" pick.
+                    stats.recordAlbum(r.data.id, r.data.tags)
                 }
                 DetailUiState(detail = r.data, loading = false)
             }

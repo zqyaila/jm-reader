@@ -1,6 +1,7 @@
 package com.jm.reader.ui.reader
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -59,6 +60,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavHostController
 import com.jm.reader.data.model.ComicDetail
 import com.jm.reader.data.model.ReadData
@@ -67,6 +69,7 @@ import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
+import com.jm.reader.ui.LocalStats
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.util.ReaderImageLoader
@@ -78,8 +81,17 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
     val repo = LocalRepository.current
     val session = LocalSession.current
     val history = LocalHistoryManager.current
+    val stats = LocalStats.current
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
+
+    // Reading time is what the stats screen reports and what flavours "guess you like". Counting
+    // only while the screen is RESUMED means a reader left open in the background does not slowly
+    // accumulate hours; pausing (or leaving) banks the current span.
+    LifecycleResumeEffect(Unit) {
+        val started = SystemClock.elapsedRealtime()
+        onPauseOrDispose { stats.addReadingTime(SystemClock.elapsedRealtime() - started) }
+    }
 
     var detail by remember { mutableStateOf<ComicDetail?>(null) }
     var read by remember { mutableStateOf<ReadData?>(null) }

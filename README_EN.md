@@ -51,6 +51,12 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   comic and coming back leaves you exactly where you were instead of reloading page one
 - 🎲 **Surprise me** — a dice row on home opens a random work straight to its detail page,
   skipping the previous pick on consecutive taps (one `/random_recommend` request)
+- 📊 **Local reading stats** — "Me → Reading stats": works read, total time read, and the tag mix.
+  A tag's weight is how many distinct works carried it, so re-opening one work cannot inflate it.
+  Stored on device only, no account needed, clearable in one tap
+- 🔮 **Guess you like** — picks a tag with probability proportional to that weight, searches it and
+  opens a random result. Favourite genres are more likely but not the only outcome (up to three tags
+  are tried, then it falls back to `/random_recommend`)
 - 🎬 **Secondary content** — novels, movies, games, blogs, forum
 - 🖥️ **Windows desktop build** — a separate `:desktop` module (Compose Multiplatform) reusing the
   same protocol implementation and design language: browse / search / detail / read, packaged into
