@@ -83,6 +83,8 @@ import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.components.SectionHeader
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.theme.glassClickable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 internal data class HomeUiState(
@@ -137,8 +139,13 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
 
     suspend fun loadInitial() {
         state = state.copy(loading = true, error = null)
-        val promoteRes = repo.getPromote()
-        val latestRes = repo.getLatest(1)
+        // Two independent endpoints: firing them in parallel saves one cross-border round-trip on
+        // the first screen (they used to run back to back).
+        val (promoteRes, latestRes) = coroutineScope {
+            val promote = async { repo.getPromote() }
+            val latest = async { repo.getLatest(1) }
+            promote.await() to latest.await()
+        }
         val promote = when (promoteRes) {
             is RepoResult.Ok -> promoteRes.data.flatten().distinctBy { it.id }
             is RepoResult.Err -> emptyList()

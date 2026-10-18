@@ -120,9 +120,20 @@ class AppRepository(
             url = hostManager.bootstrap().getOrNull()
         }
         if (url.isNullOrBlank()) return RepoResult.Err(ApiError.noHost(session))
-        refreshSettings()
+        // The host probe already called `/setting` and applied `img_host` / `jm3_version` from its
+        // payload, so a second round-trip here only delayed the splash. It is still needed on the
+        // degraded path (cached host, no successful probe).
+        if (session.imgHost.isBlank()) refreshSettings()
         return RepoResult.Ok(url)
     }
+
+    /**
+     * Last verified API base URL, or null on a fresh install.
+     *
+     * The splash uses this to enter the app immediately on a warm start and re-validate the host
+     * in the background, instead of blocking every launch on a network probe.
+     */
+    val cachedApiUrl: String? get() = session.apiUrl
 
     /** GET /setting - stores img_host (cover CDN) into the session. */
     suspend fun refreshSettings() {

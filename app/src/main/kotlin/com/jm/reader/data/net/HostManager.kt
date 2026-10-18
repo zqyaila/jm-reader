@@ -1,10 +1,14 @@
 package com.jm.reader.data.net
 
 import com.jm.reader.data.session.SessionManager
+import com.jm.reader.util.Versions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Headers
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -15,19 +19,21 @@ import java.util.concurrent.TimeUnit
 /**
  * Bootstraps and *validates* the API host.
  *
- * Mirrors the web app's FETCH_HOST flow, with the robustness fixes the old version was missing:
- *  1. fetch the encrypted host config from the CDN txt files
- *  2. decrypt with key = ASCII(md5("diosfjckwpqpdfjkvnqQjsik")) (AES-256-ECB); the files are
- *     served with a UTF-8 BOM, so the base64 step has to tolerate it (see [Crypto.base64Decode])
- *  3. collect candidate hosts from `Setting` / `Server` / `jm3_Server`
- *  4. **probe each candidate with a real API call** (`GET /setting`) and cache the first one that
- *     answers with a `code: 200` envelope
- *  5. fall back to the embedded payload / previously cached host only if nothing else works
+ * The order is deliberate, because it is what the splash screen waits on:
  *
- * Step 4 matters: the old code picked a random entry of `Server` and trusted it. When the CDN
- * fetch failed it silently selected an *image* CDN from the stale embedded payload, so every API
- * call (login, register, daily check-in, watch history) returned an HTML 404 page and the UI
- * surfaced meaningless errors.
+ *  1. build the candidate list **locally first** - last good host, the encrypted payload embedded
+ *     in the APK, then the known hosts. No network call is made to obtain candidates.
+ *  2. race the top candidates (`GET /setting`) and take the **first** one that answers `code: 200`.
+ *     A dead host therefore costs one budget window, not one timeout each.
+ *  3. only if every candidate fails, fetch the CDN host list (the old first step) and race that.
+ *
+ * The previous implementation fetched the CDN config *before* anything else, one URL after the
+ * other, with the API client's 15 s/20 s timeouts - so a slow or blocked CDN could hold the splash
+ * for ~40 s. The embedded payload already lists the same mobile API hosts, so that call belongs on
+ * the failure path, not on the critical path.
+ *
+ * `GET /setting` also returns `img_host` and `jm3_version`, so the probe applies them directly and
+ * the extra settings round-trip the repository used to make is skipped.
  */
 class HostManager(
     private val session: SessionManager,
@@ -56,14 +62,30 @@ class HostManager(
     private companion object {
         /** Upper bound on hosts we are willing to probe during startup. */
         const val MAX_CANDIDATES = 6
+
+        /** How many candidates are raced at once. */
+        const val PROBE_RACE = 4
+
+        /** Total budget for one probe race, in milliseconds. */
+        const val PROBE_BUDGET_MS = 3_500L
     }
 
     /** Short-timeout client so probing several hosts cannot stall the splash screen. */
     private val probeClient: OkHttpClient by lazy {
         http.newBuilder()
-            .connectTimeout(6, TimeUnit.SECONDS)
-            .readTimeout(6, TimeUnit.SECONDS)
-            .callTimeout(8, TimeUnit.SECONDS)
+            .connectTimeout(2500, TimeUnit.MILLISECONDS)
+            .readTimeout(3000, TimeUnit.MILLISECONDS)
+            .callTimeout(3500, TimeUnit.MILLISECONDS)
+            .retryOnConnectionFailure(false)
+            .build()
+    }
+
+    /** Even shorter budget for the off-critical-path CDN fetch. */
+    private val configClient: OkHttpClient by lazy {
+        http.newBuilder()
+            .connectTimeout(2500, TimeUnit.MILLISECONDS)
+            .readTimeout(3000, TimeUnit.MILLISECONDS)
+            .callTimeout(4000, TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(false)
             .build()
     }
@@ -71,26 +93,21 @@ class HostManager(
     /** Returns a **verified** API base URL (`https://<host>/`), caching it in the session. */
     suspend fun bootstrap(): Result<String> = withContext(Dispatchers.IO) {
         val candidates = linkedSetOf<String>()
-
         // Prefer whatever worked last: it is already known to be reachable.
         session.apiUrl?.let { normalize(it)?.let(candidates::add) }
-
-        val config = fetchConfig()
-        if (config != null) candidates.addAll(candidateHosts(config))
+        candidates.addAll(embeddedCandidates())
         candidates.addAll(knownApiHosts)
 
         val hosts = candidates.take(MAX_CANDIDATES).toList()
         if (hosts.isEmpty()) return@withContext Result.failure(IllegalStateException("無法取得 API 主機"))
 
-        // Fast path: the most likely host first. Only when it fails do we fan the rest out
-        // concurrently, so a dead candidate list costs ~one timeout rather than one per host.
-        var winner = if (probe(hosts.first())) hosts.first() else null
-        if (winner == null && hosts.size > 1) {
-            winner = coroutineScope {
-                hosts.drop(1)
-                    .map { host -> async(Dispatchers.IO) { if (probe(host)) host else null } }
-                    .firstNotNullOfOrNull { it.await() }
-            }
+        var winner = raceProbe(hosts)
+
+        // Everything embedded/known failed - only now pay for the CDN list and race its entries.
+        if (winner == null) {
+            val fresh = fetchConfig()?.let(::candidateHosts).orEmpty()
+                .filterNot { it in candidates }
+            if (fresh.isNotEmpty()) winner = raceProbe(fresh.take(MAX_CANDIDATES))
         }
 
         if (winner != null) {
@@ -103,6 +120,33 @@ class HostManager(
         val cached = session.apiUrl
         if (!cached.isNullOrBlank()) return@withContext Result.success(cached)
         Result.failure(IllegalStateException("無法取得 API 主機"))
+    }
+
+    /** Candidates from the payload shipped inside the APK - no network, a few milliseconds. */
+    private fun embeddedCandidates(): List<String> =
+        Crypto.decryptHostText(fallbackHostCode)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+            ?.let(::candidateHosts)
+            .orEmpty()
+
+    /**
+     * Probes up to [PROBE_RACE] hosts concurrently and returns the **first** that answers.
+     *
+     * `firstNotNullOfOrNull { it.await() }` would wait for candidates in list order, so a dead
+     * first entry still cost a full timeout; this takes whichever completes first and cancels the
+     * rest.
+     */
+    private suspend fun raceProbe(hosts: List<String>): String? = coroutineScope {
+        if (hosts.isEmpty()) return@coroutineScope null
+        val winners = Channel<String>(Channel.BUFFERED)
+        val jobs = hosts.take(PROBE_RACE).map { host ->
+            launch(Dispatchers.IO) {
+                if (probe(host) != null) winners.send(host)
+            }
+        }
+        val winner = withTimeoutOrNull(PROBE_BUDGET_MS) { winners.receive() }
+        jobs.forEach { it.cancel() }
+        winner
     }
 
     /** All hosts named by the decrypted config, most trustworthy key first. */
@@ -133,8 +177,13 @@ class HostManager(
         return host.takeIf { it.isNotBlank() && it.contains('.') }
     }
 
-    /** `GET /setting` must answer with a JSON envelope carrying `code: 200`. */
-    private fun probe(host: String): Boolean {
+    /**
+     * `GET /setting` must answer with a JSON envelope carrying `code: 200`.
+     *
+     * Returns the payload on success, and applies `img_host` / `jm3_version` from it - this saves
+     * the separate settings request the splash used to wait for.
+     */
+    private fun probe(host: String): JSONObject? {
         val time = System.currentTimeMillis() / 1000L
         val request = Request.Builder()
             .url("https://$host/setting?app_img_shunt=1&lang=${session.apiLang}&t=$time")
@@ -148,31 +197,42 @@ class HostManager(
             .build()
         return try {
             probeClient.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return false
+                if (!resp.isSuccessful) return null
                 val body = resp.body?.string().orEmpty()
-                val code = runCatching { JSONObject(body).optInt("code", -1) }.getOrDefault(-1)
-                code == 200
+                val json = runCatching { JSONObject(body) }.getOrNull() ?: return null
+                if (json.optInt("code", -1) != 200) return null
+                applySettings(json)
+                json
             }
         } catch (_: Exception) {
-            false
+            null
         }
     }
 
-    private suspend fun fetchConfig(): JSONObject? = withContext(Dispatchers.IO) {
-        for (u in hostUrls) {
-            val text = try {
-                http.newCall(Request.Builder().url(u).build()).execute().use { it.body?.string() }
-            } catch (_: Exception) {
-                null
-            }
-            if (text.isNullOrBlank()) continue
-            val plain = Crypto.decryptHostText(text) ?: continue
-            val json = runCatching { JSONObject(plain) }.getOrNull() ?: continue
-            if (json.optJSONArray("Server") != null || json.optJSONArray("Setting") != null) {
-                return@withContext json
-            }
+    /** Mirrors `AppRepository.refreshSettings` so the probe payload is not thrown away. */
+    private fun applySettings(obj: JSONObject) {
+        obj.optString("img_host").takeIf { it.isNotBlank() }?.let { session.imgHost = it }
+        val announced = obj.optString("jm3_version").ifBlank { obj.optString("jm3_test_version") }
+        if (announced.isNotBlank() && Versions.compare(announced, session.appVersion) > 0) {
+            session.appVersion = announced
         }
-        val plain = Crypto.decryptHostText(fallbackHostCode) ?: return@withContext null
-        runCatching { JSONObject(plain) }.getOrNull()
+    }
+
+    /** Fetches both CDN copies concurrently and returns the first usable payload. */
+    private suspend fun fetchConfig(): JSONObject? = coroutineScope {
+        val results = hostUrls.map { url -> async(Dispatchers.IO) { fetchOne(url) } }
+        results.firstNotNullOfOrNull { it.await() }
+            ?: Crypto.decryptHostText(fallbackHostCode)?.let { runCatching { JSONObject(it) }.getOrNull() }
+    }
+
+    private fun fetchOne(url: String): JSONObject? = try {
+        configClient.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            val plain = Crypto.decryptHostText(text) ?: return null
+            val json = runCatching { JSONObject(plain) }.getOrNull() ?: return null
+            json.takeIf { it.optJSONArray("Server") != null || it.optJSONArray("Setting") != null }
+        }
+    } catch (_: Exception) {
+        null
     }
 }

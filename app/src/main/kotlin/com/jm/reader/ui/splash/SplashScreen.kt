@@ -46,19 +46,32 @@ fun SplashScreen(navController: NavHostController) {
 
     LaunchedEffect(repo, retryKey) {
         state = BootState.Loading
+        val app = context.applicationContext as JMApplication
+
+        // Warm start: the last verified host is already persisted, so do not make the reader stare
+        // at a spinner while a network probe re-confirms it. Enter the app now and re-validate in
+        // the background; if the host moved, the next request retries against the new one.
+        //
+        // This is the difference between "opens in 200 ms" and "opens when the network feels like
+        // it" - a cold launch previously waited for a CDN config fetch, a serial host probe and a
+        // settings round-trip before the first screen appeared.
+        if (!repo.cachedApiUrl.isNullOrBlank() && retryKey == 0) {
+            app.appScope.launch { runCatching { repo.bootstrap() } }
+            // Automatic daily check-in: a no-op when nobody is logged in or today is already
+            // signed. Fire-and-forget so it can never hold up startup.
+            app.appScope.launch { runCatching { repo.autoDailyCheck() } }
+            // Re-file albums downloaded before pages were renamed to keep them out of the gallery.
+            app.appScope.launch { runCatching { app.downloadManager.migrateLegacyDownloads() } }
+            state = BootState.Ready
+            return@LaunchedEffect
+        }
+
         state = when (val r = repo.bootstrap()) {
             is RepoResult.Ok -> {
-                // Automatic daily check-in, once the API host is known. It is a no-op when nobody
-                // is logged in or today is already signed, so it is safe on every launch.
-                //
-                // Fired on the application scope rather than awaited here: the splash is popped
-                // the instant it navigates, which would cancel a coroutine scoped to this screen
-                // half-way through the request. It is also never awaited, so a slow or failing
-                // check-in cannot hold up startup.
-                val app = context.applicationContext as JMApplication
+                // Daily check-in and download migration run on the application scope rather than
+                // being awaited here: the splash is popped the instant it navigates, which would
+                // cancel a screen-scoped coroutine mid-request.
                 app.appScope.launch { runCatching { repo.autoDailyCheck() } }
-                // Re-file albums downloaded before pages were renamed to keep them out of the
-                // gallery. Best-effort and once-only; failures leave the old names in place.
                 app.appScope.launch { runCatching { app.downloadManager.migrateLegacyDownloads() } }
                 BootState.Ready
             }
