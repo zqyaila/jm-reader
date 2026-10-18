@@ -228,6 +228,8 @@ data class AppStrings(
     val viewAll: String,
     val weekHint: String,
     val homeGreeting: String,
+    val randomComic: String,
+    val randomHint: String,
 ) {
     companion object {
         fun forLanguage(lang: UiLanguage): AppStrings = when (lang) {
@@ -436,6 +438,8 @@ val ZhCN = AppStrings(
     viewAll = "查看全部",
     weekHint = "按本周收藏量排行，每周一更新",
     homeGreeting = "今晚读点什么",
+    randomComic = "随机一本",
+    randomHint = "不知道看什么？交给运气",
 )
 
 /** 繁體中文 */
@@ -636,6 +640,8 @@ val ZhTW = AppStrings(
     viewAll = "查看全部",
     weekHint = "按本週收藏量排行，每週一更新",
     homeGreeting = "今晚讀點什麼",
+    randomComic = "隨機一本",
+    randomHint = "不知道看什麼？交給運氣",
 )
 
 /** English */
@@ -836,4 +842,6 @@ val En = AppStrings(
     viewAll = "See all",
     weekHint = "Ranked by saves this week · refreshed every Monday",
     homeGreeting = "What are we reading tonight?",
+    randomComic = "Surprise me",
+    randomHint = "Can't decide? Let luck pick one",
 )

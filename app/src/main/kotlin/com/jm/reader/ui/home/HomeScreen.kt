@@ -35,13 +35,17 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.LocalMovies
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -50,6 +54,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -117,6 +122,9 @@ internal class HomeViewModel : ViewModel() {
 
     /** Hero carousel position, so returning does not jump back to slide 1. */
     var heroIndex = 0
+
+    /** Last work the dice landed on, so tapping it twice does not open the same page again. */
+    var lastRandomId: String? = null
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -136,6 +144,8 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
     // Entries that only carry reading progress can have no title yet; they would render as a blank
     // caption and look like a bug, so they wait until the album has been opened once.
     val recentItems = recent.filter { it.name.isNotBlank() }
+    val snackbar = remember { SnackbarHostState() }
+    var randomLoading by remember { mutableStateOf(false) }
 
     suspend fun loadInitial() {
         state = state.copy(loading = true, error = null)
@@ -159,6 +169,35 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
             is RepoResult.Err -> {
                 state = HomeUiState(promote = promote, latest = emptyList(), loading = false, error = latestRes.message)
             }
+        }
+    }
+
+    /**
+     * Dice: one random work, straight to its detail page.
+     *
+     * `/random_recommend` already returns a randomised set, so picking one client-side keeps this
+     * to a single round-trip. [HomeViewModel.lastRandomId] is skipped when there is an alternative,
+     * which stops a double tap from landing on the same work twice.
+     */
+    suspend fun surprise() {
+        if (randomLoading) return
+        randomLoading = true
+        try {
+            when (val r = repo.randomRecommend()) {
+                is RepoResult.Ok -> {
+                    val pool = r.data.filter { it.id.isNotBlank() }
+                    val pick = pool.filter { it.id != vm.lastRandomId }.ifEmpty { pool }.randomOrNull()
+                    if (pick == null) {
+                        snackbar.showSnackbar(s.noResult)
+                    } else {
+                        vm.lastRandomId = pick.id
+                        navController.navigate(Routes.comicDetail(pick.id))
+                    }
+                }
+                is RepoResult.Err -> snackbar.showSnackbar(r.message)
+            }
+        } finally {
+            randomLoading = false
         }
     }
 
@@ -246,6 +285,15 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                         QuickLinks(navController)
                     }
 
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        RandomEntry(
+                            label = s.randomComic,
+                            hint = s.randomHint,
+                            loading = randomLoading,
+                            onClick = { scope.launch { surprise() } },
+                        )
+                    }
+
                     if (recentItems.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Column {
@@ -281,6 +329,79 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                     }
                 }
             }
+        }
+        // Above the floating nav pill, so a failed dice roll is visible instead of silent.
+        SnackbarHost(
+            hostState = snackbar,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = BottomNavReserve),
+        )
+    }
+}
+
+/**
+ * "Surprise me" entry: a quiet full-width row under the quick links.
+ *
+ * Deliberately not a fifth square tile - four tiles is a rhythm, five is a grid that almost fits.
+ * As a row it also has space for the one line that explains what the button does.
+ */
+@Composable
+private fun RandomEntry(
+    label: String,
+    hint: String,
+    loading: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .clickable(enabled = !loading, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(11.dp))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.Shuffle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(19.dp),
+            )
+        }
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(
+                label,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+                hint,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        if (loading) {
+            CircularProgressIndicator(
+                Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        } else {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
