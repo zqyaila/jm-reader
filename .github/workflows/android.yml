@@ -33,6 +33,7 @@ jobs:
     # check is pre-computed into a plain string here and tested as `env.HAS_KEYSTORE == 'true'`.
     env:
       HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+      DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
 
     steps:
       - name: Check out repository
@@ -48,8 +49,22 @@ jobs:
       # The runner image ships an Android SDK whose licenses are already accepted.
       # This step adds compileSdk 36 if the image does not have it yet; when no
       # sdkmanager is found the Android Gradle Plugin downloads it on demand.
-      # No keystore cache step: debug builds are signed with the committed `debug.keystore`
-      # (see app/build.gradle.kts), which is what keeps consecutive APKs upgradeable in place.
+      # The debug keystore is a secret, not a committed file: the repository is public, and anyone
+      # holding that key could sign an APK the installer would accept as an update for
+      # com.jm.reader. It is restored here so every debug build shares one signature - which is the
+      # whole precondition for in-app updates (Android rejects an APK signed by a different key).
+      #
+      # Failing loudly on a missing secret is deliberate: silently falling back to a throwaway key
+      # would publish an APK that cannot be installed over the previous one, and the only symptom
+      # would be an installer error on the user's phone.
+      - name: Restore the debug keystore
+        run: |
+          if [ -z "${DEBUG_KEYSTORE_BASE64}" ]; then
+            echo "::error::Repository secret DEBUG_KEYSTORE_BASE64 is not set - refusing to build an APK that cannot be upgraded in place."
+            exit 1
+          fi
+          printf '%s' "${DEBUG_KEYSTORE_BASE64}" | base64 --decode > debug.keystore
+          ls -l debug.keystore
 
       - name: Ensure Android SDK platform 36
         run: |
@@ -71,6 +86,21 @@ jobs:
       - name: Build debug APK
         run: ./gradlew --no-daemon --stacktrace :app:assembleDebug -PbuildNumber=${{ github.run_number }}
 
+      # Tripwire for the one failure mode that is invisible until an update is attempted: the APK
+      # being signed by some other key. Compared against the certificate the shipped builds use.
+      - name: Verify the debug APK signer
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          APKSIGNER="$(ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/apksigner | sort -V | tail -n1)"
+          DIGEST="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/.*SHA-256 digest: //p' | head -n1)"
+          echo "APK signer SHA-256: $DIGEST"
+          EXPECTED=ea12034bfb1888a4f98412a484da604fc132d62eeaf038dc2db6c9cd10ee8a32
+          if [ "$DIGEST" != "$EXPECTED" ]; then
+            echo "::error::APK is not signed with the shared debug key (expected $EXPECTED) - updates would be rejected by the installer."
+            exit 1
+          fi
+
       - name: Restore release keystore
         if: env.HAS_KEYSTORE == 'true'
         run: |
@@ -88,10 +118,9 @@ jobs:
       - name: Collect APKs
         run: |
           mkdir -p artifacts
-          # Asset names are deliberately version- and sha-free. The rolling `latest` release is
-          # replaced on every green build, and constant names are what keep the download URL
-          # constant: .../releases/download/latest/JMReader-android-debug.apk. The commit that
-          # produced them is recorded in the release notes instead of in the filename.
+          # Asset names are deliberately version- and sha-free: the updater resolves them from the
+          # release JSON, so a stable name keeps old links working while the tag changes every
+          # build. The version and commit are recorded in the release notes instead.
           cp app/build/outputs/apk/debug/app-debug.apk "artifacts/JMReader-android-debug.apk"
           if [ -d app/build/outputs/apk/release ]; then
             find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' \

@@ -8,9 +8,9 @@ local.properties
 
 # Signing keys — never commit these
 *.keystore
-# The debug key is committed on purpose: CI and local builds must share it so that an
-# in-app update is accepted by the installer (signatures have to match).
-!debug.keystore
+# `debug.keystore` is deliberately NOT committed: the repo is public and this key is what the
+# installer checks when applying an in-app update. CI restores it from the DEBUG_KEYSTORE_BASE64
+# secret. For local builds, drop the same file at the project root once (ignored by this rule).
 *.jks
 
 # IDE

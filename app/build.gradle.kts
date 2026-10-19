@@ -37,23 +37,29 @@ android {
     }
 
     signingConfigs {
-        // Debug builds get a *committed* key instead of the runner's throwaway
-        // ~/.android/debug.keystore.
+        // Debug builds are signed with a *shared* key, taken from the repository secret
+        // `DEBUG_KEYSTORE_BASE64` and restored into the project root by CI.
         //
         // This is what makes in-app updates possible at all: Android refuses to install an APK
-        // whose signature differs from the installed one. With the per-run key every CI build was a
-        // different signer, so "download update -> install" always ended in INSTALL_FAILED_*
-        // (and the cache trick of caching ~/.android/debug.keystore silently saved nothing,
-        // because AGP never created that file on the runner).
+        // whose signature differs from the installed one. The runner's auto-generated
+        // ~/.android/debug.keystore is different on every fresh runner, so without a shared key
+        // every build was a different signer and "download update -> install" always failed.
         //
-        // A debug key is not a secret - it is the well-known "android" password and cannot be used
-        // to publish anything. The *release* key (`jmreader.keystore`) stays git-ignored and comes
-        // from CI secrets.
-        getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        // The key is not committed on purpose: this repository is public, and whoever holds it
+        // could sign an APK the phone would accept as an update for com.jm.reader. Locally, drop
+        // the same file at the project root once (it is git-ignored) to build upgrade-compatible
+        // APKs; without it Gradle falls back to its own debug key and `assembleDebug` still works.
+        //
+        // The *release* key (`jmreader.keystore`) is a separate identity, restored from
+        // `KEYSTORE_BASE64` only when the release APK is actually built.
+        val debugKeystore = rootProject.file("debug.keystore")
+        if (debugKeystore.exists()) {
+            getByName("debug") {
+                storeFile = debugKeystore
+                storePassword = System.getenv("JMREADER_DEBUG_STORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("JMREADER_DEBUG_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword = System.getenv("JMREADER_DEBUG_KEY_PASSWORD") ?: "android"
+            }
         }
 
         create("release") {
