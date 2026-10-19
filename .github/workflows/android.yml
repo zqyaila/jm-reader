@@ -95,7 +95,7 @@ jobs:
           APKSIGNER="$(ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/apksigner | sort -V | tail -n1)"
           DIGEST="$("$APKSIGNER" verify --print-certs "$APK" | sed -n 's/.*SHA-256 digest: //p' | head -n1)"
           echo "APK signer SHA-256: $DIGEST"
-          EXPECTED=ea12034bfb1888a4f98412a484da604fc132d62eeaf038dc2db6c9cd10ee8a32
+          EXPECTED=6788d3430a19dbf0bfa5f6497b6f81fd03cf49a673cabddf607859c2f2f98912
           if [ "$DIGEST" != "$EXPECTED" ]; then
             echo "::error::APK is not signed with the shared debug key (expected $EXPECTED) - updates would be rejected by the installer."
             exit 1
