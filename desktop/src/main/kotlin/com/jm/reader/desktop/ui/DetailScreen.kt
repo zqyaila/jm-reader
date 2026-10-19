@@ -1,6 +1,8 @@
 package com.jm.reader.desktop.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,15 +22,18 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.jm.reader.desktop.core.ComicDetail
 import com.jm.reader.desktop.core.HtmlText
+import com.jm.reader.desktop.core.Verdict
 import com.jm.reader.desktop.core.JmId
 import com.jm.reader.desktop.core.RepoResult
 import kotlinx.coroutines.delay
@@ -63,6 +69,8 @@ fun DetailScreen(
     onRead: (chapterId: String, chapterName: String) -> Unit,
 ) {
     val repo = LocalRepository.current
+    val stats = LocalStats.current
+    val statsSnapshot by stats.snapshot.collectAsState()
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
 
@@ -115,7 +123,7 @@ fun DetailScreen(
             )
         }
 
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
             val d = detail
             when {
                 loading && d == null -> LoadingView(label = s.loading)
@@ -133,6 +141,83 @@ fun DetailScreen(
                 )
             }
         }
+
+        // ~42 dp at the bottom of the window, not a card in the scroll: the verdict is a reaction to
+        // the work, so it should be reachable without scrolling past 48 chapters.
+        detail?.let { d ->
+            VerdictBar(
+                selected = statsSnapshot.verdicts[d.id],
+                liked = s.verdictLiked,
+                meh = s.verdictMeh,
+                disliked = s.verdictDisliked,
+                onPick = { stats.setVerdict(d.id, it) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun VerdictBar(
+    selected: Verdict?,
+    liked: String,
+    meh: String,
+    disliked: String,
+    onPick: (Verdict) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = AppSizes.ContentPadding, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                Modifier.widthIn(max = 420.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                VerdictChip(liked, selected == Verdict.LIKED, Modifier.weight(1f)) { onPick(Verdict.LIKED) }
+                VerdictChip(disliked, selected == Verdict.DISLIKED, Modifier.weight(1f)) { onPick(Verdict.DISLIKED) }
+                VerdictChip(meh, selected == Verdict.MEH, Modifier.weight(1f)) { onPick(Verdict.MEH) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VerdictChip(
+    label: String,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(50)
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier
+            .height(30.dp)
+            .clip(shape)
+            .background(if (active) accent.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent)
+            .border(
+                1.dp,
+                if (active) accent.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant,
+                shape,
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (active) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
 

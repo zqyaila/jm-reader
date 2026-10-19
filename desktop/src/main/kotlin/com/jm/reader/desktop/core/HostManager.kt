@@ -2,7 +2,10 @@ package com.jm.reader.desktop.core
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import okhttp3.Headers
 import okhttp3.OkHttpClient
@@ -46,6 +49,51 @@ class HostManager(
     private companion object {
         /** Upper bound on hosts we are willing to probe during startup. */
         const val MAX_CANDIDATES = 6
+
+        /** How many candidates are raced at once. */
+        const val PROBE_RACE = 4
+
+        /** Total budget for one probe race, in milliseconds. */
+        const val PROBE_BUDGET_MS = 3_500L
+
+        /** The lines screen lists at most this many hosts. */
+        const val MAX_LINES = 8
+    }
+
+    /** One row on the lines screen: a host and how long it took to answer, if it did. */
+    data class Line(val host: String, val ms: Long?)
+
+    /** Every host this client is willing to talk to, best guess first. */
+    fun candidateHosts(): List<String> = linkedSetOf<String>().apply {
+        normalize(session.preferredApiHost)?.let(::add)
+        session.apiUrl?.let { normalize(it)?.let(::add) }
+        addAll(embeddedCandidates())
+        addAll(knownApiHosts)
+    }.take(MAX_LINES).toList()
+
+    /** Explicit pick from the lines screen; "" means automatic. */
+    var preferredHost: String
+        get() = session.preferredApiHost
+        set(value) {
+            session.preferredApiHost = normalize(value).orEmpty()
+        }
+
+    /** Applies a pick immediately, so the next request uses it without a restart. */
+    fun use(host: String?) {
+        val clean = normalize(host)
+        preferredHost = clean.orEmpty()
+        if (clean != null) session.apiUrl = "https://$clean/"
+    }
+
+    /** Probes every candidate concurrently, for the lines screen. */
+    suspend fun measureAll(): List<Line> = coroutineScope {
+        candidateHosts().map { host ->
+            async(Dispatchers.IO) {
+                val started = System.nanoTime()
+                val ok = probe(host)
+                Line(host, if (ok) (System.nanoTime() - started) / 1_000_000 else null)
+            }
+        }.map { it.await() }
     }
 
     /** Short-timeout client so probing several hosts cannot stall the splash screen. */
@@ -58,29 +106,33 @@ class HostManager(
             .build()
     }
 
-    /** Returns a **verified** API base URL (`https://<host>/`), caching it in the session. */
+    /**
+     * Returns a **verified** API base URL (`https://<host>/`), caching it in the session.
+     *
+     * Order matters because this is what the splash waits on:
+     *  1. build the candidate list locally - explicit pick, last good host, the encrypted payload
+     *     shipped in the jar, then the known hosts. No network call to obtain candidates.
+     *  2. race the top candidates with `GET /setting` and take the first `code: 200`.
+     *  3. only if all of them fail, fetch the CDN config (the old first step) and race that.
+     *
+     * The old version fetched the CDN list before anything else, one URL after the other, so a slow
+     * or blocked CDN held the splash for tens of seconds before probing even started.
+     */
     suspend fun bootstrap(): Result<String> = withContext(Dispatchers.IO) {
         val candidates = linkedSetOf<String>()
-
-        // Prefer whatever worked last: it is already known to be reachable.
+        normalize(session.preferredApiHost)?.let(candidates::add)
         session.apiUrl?.let { normalize(it)?.let(candidates::add) }
-
-        val config = fetchConfig()
-        if (config != null) candidates.addAll(candidateHosts(config))
+        candidates.addAll(embeddedCandidates())
         candidates.addAll(knownApiHosts)
 
         val hosts = candidates.take(MAX_CANDIDATES).toList()
         if (hosts.isEmpty()) return@withContext Result.failure(IllegalStateException("無法取得 API 主機"))
 
-        // Fast path: the most likely host first. Only when it fails do we fan the rest out
-        // concurrently, so a dead candidate list costs ~one timeout rather than one per host.
-        var winner = if (probe(hosts.first())) hosts.first() else null
-        if (winner == null && hosts.size > 1) {
-            winner = coroutineScope {
-                hosts.drop(1)
-                    .map { host -> async(Dispatchers.IO) { if (probe(host)) host else null } }
-                    .firstNotNullOfOrNull { it.await() }
-            }
+        var winner = raceProbe(hosts)
+
+        if (winner == null) {
+            val fresh = fetchConfig()?.let(::candidateHosts).orEmpty().filterNot { it in candidates }
+            if (fresh.isNotEmpty()) winner = raceProbe(fresh.take(MAX_CANDIDATES))
         }
 
         if (winner != null) {
@@ -93,6 +145,30 @@ class HostManager(
         val cached = session.apiUrl
         if (!cached.isNullOrBlank()) return@withContext Result.success(cached)
         Result.failure(IllegalStateException("無法取得 API 主機"))
+    }
+
+    /** Candidates from the payload shipped with the app - no network, a few milliseconds. */
+    private fun embeddedCandidates(): List<String> =
+        Crypto.decryptHostText(fallbackHostCode)
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+            ?.let(::candidateHosts)
+            .orEmpty()
+
+    /**
+     * Probes up to [PROBE_RACE] hosts concurrently and returns whichever answers first.
+     *
+     * `firstNotNullOfOrNull { it.await() }` waits in list order, so a dead first entry still cost a
+     * full timeout; a channel returns the first *completion* instead.
+     */
+    private suspend fun raceProbe(hosts: List<String>): String? = coroutineScope {
+        if (hosts.isEmpty()) return@coroutineScope null
+        val winners = Channel<String>(Channel.BUFFERED)
+        val jobs = hosts.take(PROBE_RACE).map { host ->
+            launch(Dispatchers.IO) { if (probe(host)) winners.send(host) }
+        }
+        val winner = withTimeoutOrNull(PROBE_BUDGET_MS) { winners.receive() }
+        jobs.forEach { it.cancel() }
+        winner
     }
 
     /** All hosts named by the decrypted config, most trustworthy key first. */
@@ -148,21 +224,21 @@ class HostManager(
         }
     }
 
-    private suspend fun fetchConfig(): JSONObject? = withContext(Dispatchers.IO) {
-        for (u in hostUrls) {
-            val text = try {
-                http.newCall(Request.Builder().url(u).build()).execute().use { it.body?.string() }
-            } catch (_: Exception) {
-                null
-            }
-            if (text.isNullOrBlank()) continue
-            val plain = Crypto.decryptHostText(text) ?: continue
-            val json = runCatching { JSONObject(plain) }.getOrNull() ?: continue
-            if (json.optJSONArray("Server") != null || json.optJSONArray("Setting") != null) {
-                return@withContext json
-            }
+    /** Fetches both CDN copies concurrently and returns the first usable payload. */
+    private suspend fun fetchConfig(): JSONObject? = coroutineScope {
+        val results = hostUrls.map { url -> async(Dispatchers.IO) { fetchOne(url) } }
+        results.firstNotNullOfOrNull { it.await() }
+            ?: Crypto.decryptHostText(fallbackHostCode)?.let { runCatching { JSONObject(it) }.getOrNull() }
+    }
+
+    private fun fetchOne(url: String): JSONObject? = try {
+        http.newCall(Request.Builder().url(url).build()).execute().use { resp ->
+            val text = resp.body?.string().orEmpty()
+            val plain = Crypto.decryptHostText(text) ?: return null
+            val json = runCatching { JSONObject(plain) }.getOrNull() ?: return null
+            json.takeIf { it.optJSONArray("Server") != null || it.optJSONArray("Setting") != null }
         }
-        val plain = Crypto.decryptHostText(fallbackHostCode) ?: return@withContext null
-        runCatching { JSONObject(plain) }.getOrNull()
+    } catch (_: Exception) {
+        null
     }
 }

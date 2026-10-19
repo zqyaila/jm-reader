@@ -39,11 +39,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import com.jm.reader.desktop.core.ApiClient
 import com.jm.reader.desktop.core.AppStrings
 import com.jm.reader.desktop.core.HostManager
 import com.jm.reader.desktop.core.LanguageManager
 import com.jm.reader.desktop.core.ReadingStats
+import com.jm.reader.desktop.core.UpdateSources
 import com.jm.reader.desktop.core.Repository
 import com.jm.reader.desktop.core.Session
 import okhttp3.OkHttpClient
@@ -64,6 +68,7 @@ sealed interface Screen {
     data object Search : Screen
     data object Settings : Screen
     data object Stats : Screen
+    data object Lines : Screen
     data class Detail(val id: String) : Screen
     data class Reader(val albumId: String, val chapterId: String, val title: String) : Screen
 }
@@ -86,6 +91,10 @@ class AppContainer {
     val hostManager = HostManager(session, http)
     val repository = Repository(session, api, hostManager)
     val stats = ReadingStats()
+    val updateSources = UpdateSources(http)
+
+    /** Outlives the splash: a warm-start host re-validation must not be cancelled by navigation. */
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 }
 
 @Composable
@@ -106,6 +115,8 @@ fun App(container: AppContainer) {
         LocalLanguageManager provides container.languageManager,
         LocalAppStrings provides strings,
         LocalStats provides container.stats,
+        LocalUpdateSources provides container.updateSources,
+        LocalHostManager provides container.hostManager,
         LocalDarkTheme provides dark,
     ) {
         JMReaderTheme(dark) {
@@ -157,9 +168,12 @@ private fun AppShell(container: AppContainer, dark: Boolean, onToggleDark: () ->
                     dark = dark,
                     onToggleDark = onToggleDark,
                     onOpenStats = { push(Screen.Stats) },
+                    onOpenLines = { push(Screen.Lines) },
                 )
 
                 Screen.Stats -> StatsScreen(onBack = pop)
+
+                Screen.Lines -> LinesScreen(onBack = pop)
 
                 is Screen.Detail -> DetailScreen(
                     id = current.id,

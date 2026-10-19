@@ -39,6 +39,7 @@ import com.jm.reader.ui.novels.NovelDetailScreen
 import com.jm.reader.ui.novels.NovelsScreen
 import com.jm.reader.ui.reader.ReaderScreen
 import com.jm.reader.ui.search.SearchScreen
+import com.jm.reader.ui.lines.LinesScreen
 import com.jm.reader.ui.splash.SplashScreen
 import com.jm.reader.ui.stats.StatsScreen
 import com.jm.reader.ui.theme.AppBackdrop
@@ -57,6 +58,7 @@ fun JMRoot(app: JMApplication) {
         LocalSearchHistoryManager provides app.searchHistoryManager,
         LocalStats provides app.statsManager,
         LocalUpdateManager provides app.updateManager,
+        LocalHostManager provides app.hostManager,
         LocalAppStrings provides strings,
     ) {
         val navController = rememberNavController()
@@ -98,6 +100,7 @@ fun AppNavHost(navController: NavHostController) {
         }
         composable(Routes.CATEGORIES) { CategoriesScreen(navController, Modifier) }
         composable(Routes.STATS) { StatsScreen(navController) }
+        composable(Routes.LINES) { LinesScreen(navController) }
         composable(Routes.WEEK) { WeekScreen(navController) }
         composable(Routes.DAILY) { DailyScreen(navController) }
         composable(Routes.HOT_TAGS) { SearchScreen(navController, initialHotTagsOnly = true) }

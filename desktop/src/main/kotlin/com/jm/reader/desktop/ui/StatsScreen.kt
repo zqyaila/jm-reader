@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jm.reader.desktop.core.Guess
+import com.jm.reader.desktop.core.Verdict
 
 /**
  * Local reading stats, the desktop twin of the phone screen: works read, time read, pages read,
@@ -66,7 +67,11 @@ fun StatsScreen(onBack: () -> Unit) {
                     Modifier.weight(1.3f),
                     valueSize = 16.sp,
                 )
-                NumberCard(snapshot.totalPages.toString(), s.statsPages, Modifier.weight(1f))
+                NumberCard(
+                    "${(snapshot.averageCompletion * 100).toInt()}%",
+                    s.statsCompletion,
+                    Modifier.weight(1f),
+                )
             }
 
             if (!snapshot.hasData) {
@@ -80,14 +85,26 @@ fun StatsScreen(onBack: () -> Unit) {
                 if (snapshot.tagCounts.isNotEmpty()) {
                     SectionHeader(title = s.statsTagShare, modifier = Modifier.padding(top = 10.dp))
                     val tags = snapshot.rankedTags().take(10)
-                    val max = tags.maxOfOrNull { it.value } ?: 1
+                    val max = tags.maxOfOrNull { it.value.weight } ?: 1
                     Column(Modifier.fillMaxWidth().widthIn(max = 760.dp)) {
                         tags.forEach { entry ->
                             TagShareRow(
                                 tag = entry.key,
-                                weightLabel = s.pagesCountFmt.format(entry.value),
-                                share = Guess.share(entry.value, snapshot.tagTotal),
-                                fractionOfTop = entry.value.toFloat() / max.coerceAtLeast(1),
+                                meta = buildString {
+                                    append(s.completionFmt.format((entry.value.completion * 100).toInt()))
+                                    if (entry.value.millis >= 60_000L) {
+                                        append(" · ")
+                                        append(
+                                            formatDuration(
+                                                entry.value.millis,
+                                                s.hoursMinutesFmt,
+                                                s.minutesOnlyFmt,
+                                            ),
+                                        )
+                                    }
+                                },
+                                share = Guess.share(entry.value.weight, snapshot.tagTotal),
+                                fractionOfTop = entry.value.weight.toFloat() / max.coerceAtLeast(1),
                             )
                         }
                     }
@@ -110,10 +127,20 @@ fun StatsScreen(onBack: () -> Unit) {
                                 )
                                 Text(
                                     buildString {
-                                        append(s.pagesCountFmt.format(work.pages))
+                                        append(s.completionFmt.format((work.completion * 100).toInt()))
                                         if (work.millis >= 60_000L) {
                                             append(" · ")
                                             append(formatDuration(work.millis, s.hoursMinutesFmt, s.minutesOnlyFmt))
+                                        }
+                                        work.verdict?.let { verdict ->
+                                            append(" · ")
+                                            append(
+                                                when (verdict) {
+                                                    Verdict.LIKED -> s.verdictLiked
+                                                    Verdict.DISLIKED -> s.verdictDisliked
+                                                    Verdict.MEH -> s.verdictMeh
+                                                },
+                                            )
                                         }
                                     },
                                     style = MaterialTheme.typography.bodySmall,
@@ -182,7 +209,7 @@ private fun NumberCard(value: String, label: String, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun TagShareRow(tag: String, weightLabel: String, share: Float, fractionOfTop: Float) {
+private fun TagShareRow(tag: String, meta: String, share: Float, fractionOfTop: Float) {
     Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -194,7 +221,7 @@ private fun TagShareRow(tag: String, weightLabel: String, share: Float, fraction
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "$weightLabel · ${(share * 100).toInt()}%",
+                "$meta · ${(share * 100).toInt()}%",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

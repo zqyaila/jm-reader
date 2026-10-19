@@ -77,8 +77,8 @@ fun StatsScreen(navController: NavHostController) {
                         valueSize = 16.sp,
                     )
                     NumberCard(
-                        value = snapshot.totalPages.toString(),
-                        label = s.statsPages,
+                        value = "${(snapshot.averageCompletion * 100).toInt()}%",
+                        label = s.statsCompletion,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -107,13 +107,27 @@ fun StatsScreen(navController: NavHostController) {
                     )
                 }
                 val tags = snapshot.rankedTags().take(10)
-                val max = tags.maxOfOrNull { it.value } ?: 1
+                val max = tags.maxOfOrNull { it.value.weight } ?: 1
                 items(tags, key = { it.key }) { entry ->
                     TagShareRow(
                         tag = entry.key,
-                        weightLabel = s.pagesCountFmt.format(entry.value),
-                        share = GuessEngine.share(entry.value, snapshot.tagTotal),
-                        fractionOfTop = entry.value.toFloat() / max.coerceAtLeast(1),
+                        // "62% 通读 · 3 小时 20 分" - what the tag actually looks like in use,
+                        // rather than a page count that says nothing about how much was read.
+                        meta = buildString {
+                            append(s.completionFmt.format((entry.value.completion * 100).toInt()))
+                            if (entry.value.millis >= 60_000L) {
+                                append(" · ")
+                                append(
+                                    formatDuration(
+                                        entry.value.millis,
+                                        s.hoursMinutesFmt,
+                                        s.minutesOnlyFmt,
+                                    ),
+                                )
+                            }
+                        },
+                        share = GuessEngine.share(entry.value.weight, snapshot.tagTotal),
+                        fractionOfTop = entry.value.weight.toFloat() / max.coerceAtLeast(1),
                     )
                 }
             }
@@ -140,10 +154,20 @@ fun StatsScreen(navController: NavHostController) {
                         )
                         Text(
                             buildString {
-                                append(s.pagesCountFmt.format(work.pages))
+                                append(s.completionFmt.format((work.completion * 100).toInt()))
                                 if (work.millis >= 60_000L) {
                                     append(" · ")
                                     append(formatDuration(work.millis, s.hoursMinutesFmt, s.minutesOnlyFmt))
+                                }
+                                work.verdict?.let { verdict ->
+                                    append(" · ")
+                                    append(
+                                        when (verdict) {
+                                            com.jm.reader.data.stats.Verdict.LIKED -> s.verdictLiked
+                                            com.jm.reader.data.stats.Verdict.DISLIKED -> s.verdictDisliked
+                                            com.jm.reader.data.stats.Verdict.MEH -> s.verdictMeh
+                                        },
+                                    )
                                 }
                             },
                             fontSize = 11.sp,
@@ -226,7 +250,7 @@ private fun NumberCard(
  * name is the real, absolute share.
  */
 @Composable
-private fun TagShareRow(tag: String, weightLabel: String, share: Float, fractionOfTop: Float) {
+private fun TagShareRow(tag: String, meta: String, share: Float, fractionOfTop: Float) {
     Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -239,7 +263,7 @@ private fun TagShareRow(tag: String, weightLabel: String, share: Float, fraction
                 modifier = Modifier.weight(1f),
             )
             Text(
-                "$weightLabel · ${(share * 100).toInt()}%",
+                "$meta · ${(share * 100).toInt()}%",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

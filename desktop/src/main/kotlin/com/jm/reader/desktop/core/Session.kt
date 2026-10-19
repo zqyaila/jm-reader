@@ -31,6 +31,7 @@ class Session {
         private const val KEY_MEMBER = "memberInfo"
         private const val KEY_LANG = "lang"
         private const val KEY_API_URL = "apiUrl"
+        private const val KEY_PREFERRED_HOST = "preferredApiHost"
         private const val KEY_AUTH_EXPIRY = "authExpiry"
         private const val KEY_IMG_HOST = "imgHost"
         private const val KEY_APP_VERSION = "appVersion"
@@ -128,6 +129,12 @@ class Session {
     var apiUrl: String?
         get() = readString(KEY_API_URL)
         set(value) = writeString(KEY_API_URL, value)
+
+
+    /** Host explicitly picked on the lines screen, or "" for automatic. */
+    var preferredApiHost: String
+        get() = readString(KEY_PREFERRED_HOST) ?: ""
+        set(value) = writeString(KEY_PREFERRED_HOST, value.trim())
 
     var imgHost: String
         get() = readString(KEY_IMG_HOST).orEmpty()

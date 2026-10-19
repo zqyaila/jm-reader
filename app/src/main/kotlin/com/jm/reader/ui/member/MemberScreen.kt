@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -102,6 +103,7 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
 
         // Local-only, so it is offered whether or not the reader ever logged in.
         MenuItem(Icons.Filled.Insights, s.statsTitle) { navController.navigate(Routes.STATS) }
+        MenuItem(Icons.Filled.Speed, s.linesTitle) { navController.navigate(Routes.LINES) }
         MenuItem(Icons.Filled.SystemUpdate, s.updateCheck) { showUpdate = true }
 
         if (showUpdate) UpdateDialog(onDismiss = { showUpdate = false })

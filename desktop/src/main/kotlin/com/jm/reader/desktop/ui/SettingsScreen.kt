@@ -40,9 +40,15 @@ import kotlinx.coroutines.launch
  * line is the first thing that answers whether discovery picked a real API server or fell back.
  */
 @Composable
-fun SettingsScreen(dark: Boolean, onToggleDark: () -> Unit, onOpenStats: () -> Unit) {
+fun SettingsScreen(
+    dark: Boolean,
+    onToggleDark: () -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenLines: () -> Unit,
+) {
     val s = LocalAppStrings.current
     val session = LocalSession.current
+    val updates = LocalUpdateSources.current
     val languageManager = LocalLanguageManager.current
     val language by languageManager.language.collectAsState()
     val scope = rememberCoroutineScope()
@@ -90,6 +96,12 @@ fun SettingsScreen(dark: Boolean, onToggleDark: () -> Unit, onOpenStats: () -> U
                 }
             }
 
+            SettingsCard(title = s.linesTitle) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = onOpenLines) { Text(s.linesTitle) }
+                }
+            }
+
             SettingsCard(title = s.checkUpdate) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
@@ -98,11 +110,10 @@ fun SettingsScreen(dark: Boolean, onToggleDark: () -> Unit, onOpenStats: () -> U
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Button(onClick = { openBrowser(RELEASE_PAGE) { flash(it) } }) {
-                            Text("GitHub")
-                        }
-                        OutlinedButton(onClick = { openBrowser(PROXY_RELEASE_PAGE) { flash(it) } }) {
-                            Text(s.openViaProxy)
+                        // One button, through whichever transport the lines screen picked. The old
+                        // pair (GitHub / proxy) made the reader choose blind.
+                        Button(onClick = { openBrowser(updates.releasePage) { flash(it) } }) {
+                            Text(s.openUpdatePage)
                         }
                     }
                 }

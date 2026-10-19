@@ -94,7 +94,15 @@ fun ReaderScreen(
         val detail = (repo.getAlbum(albumId) as? RepoResult.Ok)?.data
         series = detail?.series.orEmpty()
         // Tags are attached here so this work's pages can weigh its genres in "guess you like".
-        detail?.let { stats.setMeta(albumId, it.name, it.tags) }
+        detail?.let {
+            stats.setMeta(albumId, it.name, it.tags)
+            // Work size turns "pages read" into a completion rate (see ReadingStats.Taste).
+            stats.setScope(
+                albumId = albumId,
+                totalChapters = it.series.size,
+                totalPages = maxOf(it.series.sumOf { c -> c.totalPage }, it.totalPhotos.toInt()),
+            )
+        }
     }
 
     LaunchedEffect(chapterId) {

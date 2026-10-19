@@ -51,10 +51,14 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   comic and coming back leaves you exactly where you were instead of reloading page one
 - 🎲 **Surprise me** — a dice row on home opens a random work straight to its detail page,
   skipping the previous pick on consecutive taps (one `/random_recommend` request)
-- 📊 **Local reading stats** — "Me → Reading stats": works read, time read, pages read, the tag mix
-  and "most read". **Only entering the reader counts** (opening a detail page does not), and each
-  work's weight is exactly the **number of pages read** (linear: a 200-page work contributes 200),
-  so a 120-page work beats a 6-page bounce. Device-only, no account, clearable in one tap
+- 📊 **Local reading stats** — "Me → Reading stats": works read, time read, **average completion**,
+  the tag mix and "most read". **Only entering the reader counts**. A work's weight is
+  `completion x time x verdict`: finishing a 60-page one-shot outweighs a 20-page sample of a
+  900-page series, and a five-second skim that happens to end on the last page is not a read.
+  Device-only, no account, clearable in one tap
+- 👍 **Three-way verdict** — a slim row of chips at the bottom of the detail page
+  ("Loved it / Not for me / Just okay"), tap to set, tap again to clear. It feeds the weight above,
+  and a work marked "Not for me" is never handed back by "guess you like"
 - 🔮 **Guess you like** — picks a tag with probability proportional to that weight, searches it and
   opens a random result. Favourite genres are more likely but not the only outcome (up to three tags
   are tried, then it falls back to `/random_recommend`)
@@ -64,6 +68,10 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   on github.akams.cn (`gh-proxy.com`, `ghfast.top`, `ghproxy.net`). Downloads resume with HTTP
   `Range` (only the missing bytes after a drop), are checked against the release's sha256, then
   handed to the system installer
+- 🛰️ **Routes and speed test** — "Me → Routes" measures the real latency of every API host *and*
+  every GitHub transport, in milliseconds; tapping a row applies it immediately (API host on one
+  side, direct/proxy updates on the other). Automatic keeps trying them in order. The desktop
+  client has the same screen under "Settings → Routes"
 - 🎬 **Secondary content** — novels, movies, games, blogs, forum
 - 🖥️ **Windows desktop build** — a separate `:desktop` module (Compose Multiplatform) reusing the
   same protocol and the same "ink & ember" design: unbordered covers, ember accent, and the same

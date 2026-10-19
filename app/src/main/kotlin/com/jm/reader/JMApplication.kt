@@ -38,6 +38,8 @@ class JMApplication : Application() {
         private set
     lateinit var updateManager: UpdateManager
         private set
+    lateinit var hostManager: HostManager
+        private set
 
     /**
      * Scope for launch-time work that must outlive any screen.
@@ -59,7 +61,7 @@ class JMApplication : Application() {
             .writeTimeout(20, TimeUnit.SECONDS)
             .build()
 
-        val hostManager = HostManager(session, http)
+        hostManager = HostManager(session, http)
         apiClient = ApiClient(session, http)
         repository = AppRepository(session, apiClient, hostManager)
         downloadManager = DownloadManager(this, repository)

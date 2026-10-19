@@ -25,6 +25,7 @@ class SessionManager(context: Context) {
         private const val KEY_MEMBER = "memberInfo"
         private const val KEY_LANG = "lang"
         private const val KEY_API_URL = "apiUrl"
+        private const val KEY_PREFERRED_HOST = "preferredApiHost"
         private const val KEY_AUTH_EXPIRY = "authExpiry"
         private const val KEY_IMG_HOST = "imgHost"
         private const val KEY_APP_VERSION = "appVersion"
@@ -106,6 +107,16 @@ class SessionManager(context: Context) {
     var apiUrl: String?
         get() = prefs.getString(KEY_API_URL, null)
         set(value) = prefs.edit().putString(KEY_API_URL, value).apply()
+
+    /**
+     * Host the reader picked on the "lines" screen, or "" for automatic.
+     *
+     * Kept separate from [apiUrl]: `apiUrl` is whatever the last probe verified, while this is the
+     * explicit preference and must survive a failed probe.
+     */
+    var preferredApiHost: String
+        get() = prefs.getString(KEY_PREFERRED_HOST, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_PREFERRED_HOST, value.trim()).apply()
 
     var imgHost: String
         get() = prefs.getString(KEY_IMG_HOST, "") ?: ""

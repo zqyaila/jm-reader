@@ -223,7 +223,8 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
         if (guessLoading) return
         guessLoading = true
         try {
-            val counts = statsSnapshot.tagCounts
+            // The profile now carries a full per-tag aggregate; the dice only needs the weights.
+            val counts = statsSnapshot.tagCounts.mapValues { it.value.weight }
             if (counts.isEmpty()) {
                 snackbar.showSnackbar(s.guessNeedData)
                 return
@@ -238,8 +239,11 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                 remaining.remove(tag)
                 when (val r = repo.adaptiveSearch(tag)) {
                     is RepoResult.Ok -> {
+                        // A work the reader marked "萎了" is never handed back; skipping it here
+                        // (rather than blacklisting the tag) keeps the rest of the tag usable.
+                        val disliked = statsSnapshot.dislikedIds
                         val pool = r.data.items.filter {
-                            it.id.isNotBlank() && it.id != vm.lastGuessId
+                            it.id.isNotBlank() && it.id != vm.lastGuessId && it.id !in disliked
                         }
                         if (pool.isNotEmpty()) chosen = pool.random()
                     }

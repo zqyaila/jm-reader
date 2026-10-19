@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -73,6 +74,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.jm.reader.data.download.DownloadManager
 import com.jm.reader.data.model.ComicDetail
+import com.jm.reader.data.stats.Verdict
 import com.jm.reader.data.model.SeriesItem
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.repo.RepoResult
@@ -81,6 +83,7 @@ import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
+import com.jm.reader.ui.LocalStats
 import com.jm.reader.ui.components.AppTopBar
 import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
@@ -115,6 +118,8 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
     val repo = LocalRepository.current
     val session = LocalSession.current
     val history = LocalHistoryManager.current
+    val stats = LocalStats.current
+    val statsSnapshot by stats.snapshot.collectAsState()
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -170,6 +175,19 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
         containerColor = Color.Transparent,
         topBar = { AppTopBar(s.comicDetail, onBack = { navController.popBackStack() }) },
         snackbarHost = { SnackbarHost(snackbar) },
+        // A slim verdict bar, not a card: three small chips and a hairline, so it costs ~44 dp of
+        // height and never grows with the tags or the chapter list.
+        bottomBar = {
+            if (state.detail != null) {
+                VerdictBar(
+                    selected = statsSnapshot.verdicts[id],
+                    liked = s.verdictLiked,
+                    meh = s.verdictMeh,
+                    disliked = s.verdictDisliked,
+                    onPick = { stats.setVerdict(id, it) },
+                )
+            }
+        },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             val detail = state.detail
@@ -512,6 +530,68 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
  * The blur is only used as a *wash* (55% alpha under a gradient), so devices below API 31 - where
  * `Modifier.blur` is a no-op - still get a readable gradient instead of a sharp, noisy crop.
  */
+/**
+ * 起立 / 平平无奇 / 萎了 - one tap, stored locally, tap again to clear.
+ *
+ * Three equal chips rather than a segmented control: the labels are prose, not a scale, and equal
+ * widths keep the bar from reflowing when the app is in English.
+ */
+@Composable
+private fun VerdictBar(
+    selected: Verdict?,
+    liked: String,
+    meh: String,
+    disliked: String,
+    onPick: (Verdict) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
+        HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            VerdictChip(liked, selected == Verdict.LIKED, Modifier.weight(1f)) { onPick(Verdict.LIKED) }
+            VerdictChip(disliked, selected == Verdict.DISLIKED, Modifier.weight(1f)) { onPick(Verdict.DISLIKED) }
+            VerdictChip(meh, selected == Verdict.MEH, Modifier.weight(1f)) { onPick(Verdict.MEH) }
+        }
+    }
+}
+
+@Composable
+private fun VerdictChip(
+    label: String,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(50)
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier
+            .height(30.dp)
+            .clip(shape)
+            .background(if (active) accent.copy(alpha = 0.14f) else Color.Transparent)
+            .border(1.dp, if (active) accent.copy(alpha = 0.55f) else MaterialTheme.colorScheme.outlineVariant, shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            fontSize = 11.5.sp,
+            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (active) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
 @Composable
 private fun DetailHeader(detail: ComicDetail, repo: AppRepository) {
     val s = LocalAppStrings.current

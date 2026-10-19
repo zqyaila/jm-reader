@@ -4,6 +4,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import com.jm.reader.data.download.DownloadManager
 import com.jm.reader.data.history.HistoryManager
 import com.jm.reader.data.history.SearchHistoryManager
+import com.jm.reader.data.net.HostManager
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.session.SessionManager
 import com.jm.reader.data.stats.ReadingStatsManager
@@ -42,6 +43,11 @@ val LocalSearchHistoryManager = staticCompositionLocalOf<SearchHistoryManager> {
 /** On-device reading statistics (tags, time, distinct works). */
 val LocalStats = staticCompositionLocalOf<ReadingStatsManager> {
     error("LocalStats not provided")
+}
+
+/** API host probing/selection, used by the lines screen. */
+val LocalHostManager = staticCompositionLocalOf<HostManager> {
+    error("LocalHostManager not provided")
 }
 
 /** GitHub-release updater (direct, with reverse-proxy fallback). */

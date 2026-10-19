@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.jm.reader.desktop.core.RepoResult
+import kotlinx.coroutines.launch
 
 /**
  * Startup screen: resolves a working API host before anything else can render.
@@ -43,6 +44,19 @@ fun SplashScreen(container: AppContainer, onReady: () -> Unit) {
 
     LaunchedEffect(attempt) {
         error = null
+        // Warm start: a verified host is already stored, so do not make the reader wait for a
+        // network probe before the first window appears. Enter the app now and re-validate in the
+        // background; if the host moved, the next request retries against the new one.
+        //
+        // This is the difference between "opens at once" and "opens when the network feels like
+        // it": bootstrap used to fetch the CDN host list and probe before anything rendered.
+        val cached = container.session.apiUrl
+        if (!cached.isNullOrBlank() && attempt == 0) {
+            onReady()
+            container.appScope.launch { runCatching { repo.bootstrap() } }
+            return@LaunchedEffect
+        }
+
         when (val r = repo.bootstrap()) {
             is RepoResult.Ok -> onReady()
             is RepoResult.Err -> error = r.message

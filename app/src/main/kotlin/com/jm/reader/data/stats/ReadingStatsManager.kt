@@ -7,24 +7,77 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.ln
+import kotlin.math.roundToInt
+
+/** The reader's explicit verdict on a work, from the bar at the bottom of the detail page. */
+enum class Verdict(val stored: Int) {
+    LIKED(1),
+    MEH(0),
+    DISLIKED(-1),
+    ;
+
+    companion object {
+        fun of(stored: Int): Verdict? = entries.firstOrNull { it.stored == stored }
+    }
+}
+
+/**
+ * How a work's contribution to the taste profile is scored.
+ *
+ * The weight is **completion × time**, not pages. Pages alone reward long works: reading 20 pages of
+ * a 900-page series is a 2 % sample but used to outweigh finishing a 60-page one-shot. Completion
+ * says how much of *this* work was actually consumed, and the time factor stops a 5-second skim that
+ * happens to end on the last page from counting as a real read.
+ *
+ * Pure functions on purpose: the scoring is unit-tested without Android.
+ */
+object Taste {
+
+    /** 0..1. Falls back to chapters, then to a neutral 0.5 when the work's size is unknown. */
+    fun completion(readPages: Int, totalPages: Int, chaptersRead: Int, totalChapters: Int): Float {
+        if (totalPages > 0) return (readPages.toFloat() / totalPages).coerceIn(0f, 1f)
+        if (totalChapters > 0) return (chaptersRead.toFloat() / totalChapters).coerceIn(0f, 1f)
+        return if (readPages > 0) 0.5f else 0f
+    }
+
+    /**
+     * 1.0 with no time, ~2.0 at an hour, capped at 2.5.
+     *
+     * Logarithmic because the difference between 1 and 10 minutes matters far more than between 100
+     * and 110. The cap keeps a work left open for hours from dominating every tag on its own.
+     */
+    fun timeFactor(millis: Long): Float {
+        val minutes = (millis / 60_000f).coerceAtLeast(0f)
+        return 1f + (ln(1f + minutes) / ln(61f)).coerceIn(0f, 1.5f)
+    }
+
+    fun verdictMultiplier(verdict: Verdict?): Float = when (verdict) {
+        Verdict.LIKED -> 1.6f
+        Verdict.DISLIKED -> 0.2f
+        else -> 1f
+    }
+
+    /** Points a single work adds to each of its tags; 0 when nothing was read. */
+    fun weightPoints(completion: Float, millis: Long, verdict: Verdict?): Int {
+        if (completion <= 0f) return 0
+        val points = completion * timeFactor(millis) * verdictMultiplier(verdict) * 100f
+        return points.roundToInt().coerceAtLeast(1)
+    }
+}
 
 /**
  * Local reading statistics - the data behind the stats screen and the "guess you like" dice.
  *
  * **Only actual reading counts.** Opening a detail page (tapping a cover) is not a read: nothing is
- * recorded until the reader screen successfully loads a chapter. That distinction is what makes the
- * numbers mean "what I read", not "what I clicked".
+ * recorded until the reader screen successfully loads a chapter.
  *
  * Per work it keeps:
- *  - `chapters`: chapter id -> furthest page reached. Pages read of a work is the sum of those
- *    furthest pages, so re-reading a page does not inflate anything.
- *  - `millis`: reading time, reported by the reader only while it is resumed.
- *  - `tags`: the work's tags, captured when the reader loads its metadata.
- *
- * The tag weights that feed [GuessEngine] are **pages read**, not "works opened": a 120-page work
- * the reader actually finished should count far more than a 6-page sample they bounced off. The
- * weight is linear - a 200-page work contributes 200 to each of its tags - so what the stats screen
- * shows ("N 页") is exactly what the recommendation uses.
+ *  - `chapters`: chapter id -> furthest page reached, so re-reading a page adds nothing;
+ *  - totals from the album's chapter list, which turn "pages read" into a **completion rate**;
+ *  - `millis`: reading time, reported only while the reader is resumed;
+ *  - `tags`: the work's tags;
+ *  - `verdict`: the explicit 起立 / 平平无奇 / 萎了 rating.
  *
  * Everything is on-device; there is no account and no upload.
  */
@@ -35,25 +88,44 @@ class ReadingStatsManager(context: Context) {
         val name: String,
         val pages: Int,
         val millis: Long,
+        /** 0..1 share of the work that was actually read. */
+        val completion: Float,
+        val verdict: Verdict? = null,
     )
+
+    /** Per-tag aggregate: how much it weighs, and what the reading behind it looked like. */
+    data class TagStat(
+        val weight: Int,
+        val works: Int,
+        val millis: Long,
+        /** Sum of per-work completions; divide by [works] for the average. */
+        val completionSum: Float,
+    ) {
+        val completion: Float get() = if (works == 0) 0f else completionSum / works
+    }
 
     data class Snapshot(
         val albumCount: Int = 0,
         val totalMillis: Long = 0L,
-        val totalPages: Int = 0,
-        /** tag -> pages read in works carrying it (linear, no per-work cap). */
-        val tagCounts: Map<String, Int> = emptyMap(),
+        /** Mean completion across works that were actually read, 0..1. */
+        val averageCompletion: Float = 0f,
+        val tagCounts: Map<String, TagStat> = emptyMap(),
         val topWorks: List<WorkRead> = emptyList(),
+        val verdicts: Map<String, Verdict> = emptyMap(),
     ) {
-        val tagTotal: Int get() = tagCounts.values.sum()
+        val tagTotal: Int get() = tagCounts.values.sumOf { it.weight }
 
-        val hasData: Boolean get() = albumCount > 0 || totalMillis > 0 || totalPages > 0
+        val hasData: Boolean get() = albumCount > 0 || totalMillis > 0
 
         /** Tags sorted by weight, heaviest first. */
-        fun rankedTags(): List<Map.Entry<String, Int>> =
+        fun rankedTags(): List<Map.Entry<String, TagStat>> =
             tagCounts.entries.sortedWith(
-                compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key },
+                compareByDescending<Map.Entry<String, TagStat>> { it.value.weight }.thenBy { it.key },
             )
+
+        /** Works the reader explicitly rejected, so the guesser can avoid handing them back. */
+        val dislikedIds: Set<String>
+            get() = verdicts.filterValues { it == Verdict.DISLIKED }.keys
     }
 
     private data class Album(
@@ -62,8 +134,14 @@ class ReadingStatsManager(context: Context) {
         val chapters: MutableMap<String, Int> = LinkedHashMap(),
         var millis: Long = 0L,
         var at: Long = 0L,
+        var totalPages: Int = 0,
+        var totalChapters: Int = 0,
+        var verdict: Verdict? = null,
     ) {
         val pages: Int get() = chapters.values.sum()
+
+        val completion: Float
+            get() = Taste.completion(pages, totalPages, chapters.size, totalChapters)
     }
 
     private val prefs: SharedPreferences =
@@ -97,12 +175,27 @@ class ReadingStatsManager(context: Context) {
         commit()
     }
 
+    /**
+     * How big the work is, from its chapter list. Only ever grows: a partial series response must
+     * not shrink a denominator that a full one already established.
+     */
+    @Synchronized
+    fun setScope(albumId: String, totalChapters: Int, totalPages: Int) {
+        if (albumId.isBlank()) return
+        val album = albums.getOrPut(albumId) { Album() }
+        if (totalChapters > album.totalChapters) album.totalChapters = totalChapters
+        if (totalPages > album.totalPages) album.totalPages = totalPages
+        album.at = System.currentTimeMillis()
+        commit()
+    }
+
     /** A chapter was opened: it counts as at least one page read. */
     @Synchronized
     fun recordChapter(albumId: String, chapterId: String) {
         if (albumId.isBlank() || chapterId.isBlank()) return
         val album = albums.getOrPut(albumId) { Album() }
         if (album.chapters[chapterId] == null) album.chapters[chapterId] = 1
+        if (album.chapters.size > album.totalChapters) album.totalChapters = album.chapters.size
         album.at = System.currentTimeMillis()
         commit()
     }
@@ -129,10 +222,20 @@ class ReadingStatsManager(context: Context) {
         commit()
     }
 
+    /** Explicit verdict from the detail page; passing the current one again clears it (a toggle). */
+    @Synchronized
+    fun setVerdict(albumId: String, verdict: Verdict?) {
+        if (albumId.isBlank()) return
+        val album = albums.getOrPut(albumId) { Album() }
+        album.verdict = if (album.verdict == verdict) null else verdict
+        album.at = System.currentTimeMillis()
+        commit()
+    }
+
     @Synchronized
     fun clear() {
         albums.clear()
-        prefs.edit().remove(KEY).remove(LEGACY_KEY).apply()
+        prefs.edit().remove(KEY).remove(LEGACY_KEY).remove(OLDER_KEY).apply()
         publish()
     }
 
@@ -147,34 +250,51 @@ class ReadingStatsManager(context: Context) {
     }
 
     private fun publish() {
-        val tags = LinkedHashMap<String, Int>()
+        val tags = LinkedHashMap<String, TagStat>()
         var albumCount = 0
-        var totalPages = 0
         var totalMillis = 0L
+        var completionSum = 0f
         val works = ArrayList<WorkRead>()
+        val verdicts = LinkedHashMap<String, Verdict>()
 
         albums.forEach { (id, album) ->
-            val pages = album.pages
+            album.verdict?.let { verdicts[id] = it }
             // A work counts as "read" only once a page was turned in the reader.
-            if (pages > 0) {
-                albumCount++
-                totalPages += pages
-                totalMillis += album.millis
-                // Linear on purpose: the UI reports "N pages", so the weight behind the guess must
-                // be that same N. (An earlier build capped this at 100, which silently disagreed
-                // with the page count shown next to the tag.)
-                val weight = pages.coerceAtLeast(1)
-                album.tags.forEach { tag -> tags[tag] = (tags[tag] ?: 0) + weight }
-                works += WorkRead(albumId = id, name = album.name, pages = pages, millis = album.millis)
+            if (album.chapters.isEmpty()) return@forEach
+
+            val completion = album.completion
+            val weight = Taste.weightPoints(completion, album.millis, album.verdict)
+            albumCount++
+            totalMillis += album.millis
+            completionSum += completion
+            album.tags.forEach { tag ->
+                val prev = tags[tag]
+                tags[tag] = TagStat(
+                    weight = (prev?.weight ?: 0) + weight,
+                    works = (prev?.works ?: 0) + 1,
+                    millis = (prev?.millis ?: 0L) + album.millis,
+                    completionSum = (prev?.completionSum ?: 0f) + completion,
+                )
             }
+            works += WorkRead(
+                albumId = id,
+                name = album.name,
+                pages = album.pages,
+                millis = album.millis,
+                completion = completion,
+                verdict = album.verdict,
+            )
         }
 
         _snapshot.value = Snapshot(
             albumCount = albumCount,
             totalMillis = totalMillis,
-            totalPages = totalPages,
-            tagCounts = tags.entries.sortedByDescending { it.value }.associate { it.key to it.value },
-            topWorks = works.sortedByDescending { it.pages }.take(MAX_TOP_WORKS),
+            averageCompletion = if (albumCount == 0) 0f else completionSum / albumCount,
+            tagCounts = tags.entries.sortedByDescending { it.value.weight }.associate { it.key to it.value },
+            topWorks = works.sortedByDescending {
+                Taste.weightPoints(it.completion, it.millis, it.verdict)
+            }.take(MAX_TOP_WORKS),
+            verdicts = verdicts,
         )
     }
 
@@ -203,7 +323,10 @@ class ReadingStatsManager(context: Context) {
                     .put("tags", JSONArray(album.tags))
                     .put("chapters", chapters)
                     .put("millis", album.millis)
-                    .put("at", album.at),
+                    .put("at", album.at)
+                    .put("totalPages", album.totalPages)
+                    .put("totalChapters", album.totalChapters)
+                    .put("verdict", album.verdict?.stored ?: Int.MIN_VALUE),
             )
         }
         root.put("albums", arr)
@@ -211,7 +334,12 @@ class ReadingStatsManager(context: Context) {
     }
 
     private fun load() {
-        val raw = prefs.getString(KEY, null) ?: return
+        // v3 adds completion denominators and the verdict. v2 rows stay readable: they simply carry
+        // no totals, so completion falls back to a neutral estimate until the work is opened again
+        // (the reader calls setScope on every load, which corrects it).
+        val raw = prefs.getString(KEY, null)
+            ?: prefs.getString(LEGACY_KEY, null)
+            ?: return
         val root = runCatching { JSONObject(raw) }.getOrNull() ?: return
         val map = root.optJSONObject("albums") ?: return
         map.keys().forEach { id ->
@@ -220,6 +348,9 @@ class ReadingStatsManager(context: Context) {
                 name = o.optString("name"),
                 millis = o.optLong("millis", 0L).coerceAtLeast(0L),
                 at = o.optLong("at", 0L),
+                totalPages = o.optInt("totalPages", 0).coerceAtLeast(0),
+                totalChapters = o.optInt("totalChapters", 0).coerceAtLeast(0),
+                verdict = Verdict.of(o.optInt("verdict", Int.MIN_VALUE)),
             )
             val tagsArr = o.optJSONArray("tags") ?: JSONArray()
             album.tags = (0 until tagsArr.length())
@@ -235,8 +366,9 @@ class ReadingStatsManager(context: Context) {
     }
 
     private companion object {
-        const val KEY = "stats_v2"
-        const val LEGACY_KEY = "stats_v1"
+        const val KEY = "stats_v3"
+        const val LEGACY_KEY = "stats_v2"
+        const val OLDER_KEY = "stats_v1"
         const val MAX_ALBUMS = 500
         const val MAX_TAGS_PER_ALBUM = 12
         const val MAX_TOP_WORKS = 8

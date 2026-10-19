@@ -16,7 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jm.reader.desktop.core.AppStrings
 import com.jm.reader.desktop.core.LanguageManager
+import com.jm.reader.desktop.core.HostManager
 import com.jm.reader.desktop.core.ReadingStats
+import com.jm.reader.desktop.core.UpdateSources
 import com.jm.reader.desktop.core.Repository
 import com.jm.reader.desktop.core.Session
 
@@ -185,3 +187,9 @@ val LocalSession = staticCompositionLocalOf<Session> { error("LocalSession not p
 val LocalLanguageManager = staticCompositionLocalOf<LanguageManager> { error("LanguageManager not provided") }
 val LocalAppStrings = staticCompositionLocalOf<AppStrings> { error("AppStrings not provided") }
 val LocalStats = staticCompositionLocalOf<ReadingStats> { error("LocalStats not provided") }
+
+/** API host probing/selection. */
+val LocalHostManager = staticCompositionLocalOf<HostManager> { error("LocalHostManager not provided") }
+
+/** GitHub transports + the reader's pick, for the lines screen and the update card. */
+val LocalUpdateSources = staticCompositionLocalOf<UpdateSources> { error("LocalUpdateSources not provided") }

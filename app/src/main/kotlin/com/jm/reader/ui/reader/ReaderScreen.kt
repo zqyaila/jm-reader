@@ -134,6 +134,15 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
                 // Tags belong to the work; record them here so the reader's stats can weight this
                 // work's contribution by how much of it was actually read.
                 stats.setMeta(albumId, r.data.name, r.data.tags)
+                // How big the work is turns "pages read" into a completion rate. `totalPhotos` is
+                // the album-wide page count the API always returns; the per-chapter sum is more
+                // precise when the series list is complete, so take whichever is larger.
+                val knownPages = r.data.series.sumOf { it.totalPage }
+                stats.setScope(
+                    albumId = albumId,
+                    totalChapters = r.data.series.size,
+                    totalPages = maxOf(knownPages, r.data.totalPhotos.toInt()),
+                )
             }
             is RepoResult.Err -> Unit
         }

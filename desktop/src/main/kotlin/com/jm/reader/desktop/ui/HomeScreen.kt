@@ -179,7 +179,7 @@ fun HomeScreen(
         if (guessLoading) return
         guessLoading = true
         try {
-            val counts = statsSnapshot.tagCounts
+            val counts = statsSnapshot.tagCounts.mapValues { it.value.weight }
             if (counts.isEmpty()) {
                 snackbar.showSnackbar(s.guessNeedData)
                 return
@@ -193,7 +193,11 @@ fun HomeScreen(
                 remaining.remove(tag)
                 when (val r = repo.adaptiveSearch(tag)) {
                     is RepoResult.Ok -> {
-                        val pool = r.data.items.filter { it.id.isNotBlank() && it.id != state.lastGuessId }
+                        // Never hand back a work the reader marked 萎了.
+                        val disliked = statsSnapshot.dislikedIds
+                        val pool = r.data.items.filter {
+                            it.id.isNotBlank() && it.id != state.lastGuessId && it.id !in disliked
+                        }
                         if (pool.isNotEmpty()) chosen = pool.random()
                     }
                     is RepoResult.Err -> Unit

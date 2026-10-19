@@ -9,6 +9,8 @@ import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.jm.reader.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -61,6 +63,20 @@ class UpdateManager(
         data class Failed(val message: String) : DownloadResult()
     }
 
+    /** One transport for the GitHub release: direct, or a reverse proxy in front of it. */
+    data class Source(val id: String, val label: String, val prefix: String)
+
+    private val prefs = context.applicationContext
+        .getSharedPreferences("jm_update", Context.MODE_PRIVATE)
+
+    /** Short-timeout client: a blocked source must not hold up the latency table. */
+    private val probeHttp: OkHttpClient = baseHttp.newBuilder()
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(4, TimeUnit.SECONDS)
+        .callTimeout(6, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(false)
+        .build()
+
     private val http: OkHttpClient = baseHttp.newBuilder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -75,6 +91,49 @@ class UpdateManager(
         // A whole APK can legitimately take minutes; only the per-read timeout should fire.
         .callTimeout(0, TimeUnit.MILLISECONDS)
         .build()
+
+    /** Every transport this updater can use, direct first. */
+    val sources: List<Source> = listOf(
+        Source("direct", "GitHub", ""),
+        Source("ghproxy", "gh-proxy.com", "https://gh-proxy.com/"),
+        Source("ghfast", "ghfast.top", "https://ghfast.top/"),
+        Source("ghproxynet", "ghproxy.net", "https://ghproxy.net/"),
+    )
+
+    /** Explicit source id from the lines screen; [AUTO] means "try in the default order". */
+    var preferredSourceId: String
+        get() = prefs.getString(KEY_SOURCE, AUTO_ID) ?: AUTO_ID
+        set(value) {
+            prefs.edit().putString(KEY_SOURCE, value.ifBlank { AUTO_ID }).apply()
+        }
+
+    /**
+     * Measures each transport with one small API request. A 403 still counts as reachable: it is
+     * GitHub rate-limiting an anonymous caller, which says the path works.
+     */
+    suspend fun measureSources(): List<Pair<Source, Long?>> = coroutineScope {
+        sources.map { source ->
+            async(Dispatchers.IO) {
+                val started = System.nanoTime()
+                val reachable = try {
+                    probeHttp.newCall(
+                        Request.Builder()
+                            .url(source.prefix + API_URL)
+                            .header("User-Agent", USER_AGENT)
+                            .build(),
+                    ).execute().use { it.code in 200..499 }
+                } catch (_: Exception) {
+                    false
+                }
+                source to if (reachable) (System.nanoTime() - started) / 1_000_000 else null
+            }
+        }.map { it.await() }
+    }
+
+    private fun orderedSources(): List<Source> {
+        val picked = preferredSourceId
+        return if (picked == AUTO_ID) sources else sources.sortedBy { if (it.id == picked) 0 else 1 }
+    }
 
     /** Checks the rolling release; the first source that answers wins. */
     suspend fun check(): CheckResult = withContext(Dispatchers.IO) {
@@ -121,7 +180,7 @@ class UpdateManager(
         val target = File(dir, info.assetName)
         var lastError: String? = null
 
-        for (prefix in ASSET_PREFIXES) {
+        for (prefix in orderedSources().map { it.prefix }) {
             try {
                 val ok = fetch(prefix + info.url, part, info.sizeBytes, onProgress)
                 if (!ok) continue
@@ -177,12 +236,7 @@ class UpdateManager(
     // Transport
     // -----------------------------------------------------------------------
 
-    private fun apiUrls(): List<String> {
-        // `releases/latest` (not a fixed `tags/latest` tag): every green build publishes its own
-        // versioned release, so the newest one is whatever GitHub marks as latest.
-        val api = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
-        return listOf(api) + API_PREFIXES.map { it + api }
-    }
+    private fun apiUrls(): List<String> = orderedSources().map { it.prefix + API_URL }
 
     /** Streams into [part], appending when the server answers `206 Partial Content`. */
     private fun fetch(url: String, part: File, expectedSize: Long, onProgress: (Float) -> Unit): Boolean {
@@ -249,28 +303,20 @@ class UpdateManager(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private companion object {
-        const val OWNER = "zqyaila"
-        const val REPO = "jm-reader"
-        const val USER_AGENT = "JMReader-Android"
+    companion object {
+        /** Preferred-source id meaning "no explicit pick". */
+        const val AUTO_ID = "auto"
 
         /** Release publishes a few minutes after Gradle finishes; this is the slack allowed. */
-        const val PUBLISH_TOLERANCE_MS = 15L * 60 * 1000
+        private const val PUBLISH_TOLERANCE_MS = 15L * 60 * 1000
 
-        /** Reverse proxies listed by github.akams.cn; tried only when direct GitHub fails. */
-        val API_PREFIXES = listOf(
-            "https://gh-proxy.com/",
-            "https://ghfast.top/",
-        )
-
-        /** Empty prefix = direct. Proxies are prefixed onto the full github.com asset URL. */
-        val ASSET_PREFIXES = listOf(
-            "",
-            "https://gh-proxy.com/",
-            "https://ghfast.top/",
-            "https://ghproxy.net/",
-        )
+        private const val OWNER = "zqyaila"
+        private const val REPO = "jm-reader"
+        private const val USER_AGENT = "JMReader-Android"
+        private const val KEY_SOURCE = "preferredSource"
+        private const val API_URL = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
     }
+
 }
 
 /**

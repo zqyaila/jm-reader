@@ -68,6 +68,9 @@ class HostManager(
 
         /** Total budget for one probe race, in milliseconds. */
         const val PROBE_BUDGET_MS = 3_500L
+
+        /** The lines screen lists at most this many hosts. */
+        const val MAX_LINES = 8
     }
 
     /** Short-timeout client so probing several hosts cannot stall the splash screen. */
@@ -90,10 +93,56 @@ class HostManager(
             .build()
     }
 
+    /** One row on the "lines" screen: a host and how long it took to answer, if it did. */
+    data class Line(val host: String, val ms: Long?)
+
+    /** Every host this client is willing to talk to, best guess first. */
+    fun candidateHosts(): List<String> = linkedSetOf<String>().apply {
+        normalize(session.preferredApiHost)?.let(::add)
+        session.apiUrl?.let { normalize(it)?.let(::add) }
+        addAll(embeddedCandidates())
+        addAll(knownApiHosts)
+    }.take(MAX_LINES).toList()
+
+    /** Explicit pick from the lines screen; "" means automatic. */
+    var preferredHost: String
+        get() = session.preferredApiHost
+        set(value) {
+            session.preferredApiHost = normalize(value).orEmpty()
+        }
+
+    /**
+     * Applies a pick immediately.
+     *
+     * [preferredHost] alone would only take effect on the next bootstrap, so every request in the
+     * current session would keep using the old host and the screen would look like a no-op.
+     */
+    fun use(host: String?) {
+        val clean = normalize(host)
+        preferredHost = clean.orEmpty()
+        if (clean != null) session.apiUrl = "https://$clean/"
+    }
+
+    /**
+     * Probes hosts concurrently for the lines screen. Unlike [bootstrap] this waits for *all* of
+     * them, because the point is to show every latency, not to find the first winner.
+     */
+    suspend fun measureAll(): List<Line> = coroutineScope {
+        val hosts = candidateHosts()
+        hosts.map { host ->
+            async(Dispatchers.IO) {
+                val started = System.nanoTime()
+                val ok = probe(host) != null
+                Line(host, if (ok) (System.nanoTime() - started) / 1_000_000 else null)
+            }
+        }.map { it.await() }
+    }
+
     /** Returns a **verified** API base URL (`https://<host>/`), caching it in the session. */
     suspend fun bootstrap(): Result<String> = withContext(Dispatchers.IO) {
         val candidates = linkedSetOf<String>()
-        // Prefer whatever worked last: it is already known to be reachable.
+        // An explicit pick wins; then whatever worked last, which is known to be reachable.
+        normalize(session.preferredApiHost)?.let(candidates::add)
         session.apiUrl?.let { normalize(it)?.let(candidates::add) }
         candidates.addAll(embeddedCandidates())
         candidates.addAll(knownApiHosts)
