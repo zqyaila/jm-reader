@@ -37,6 +37,25 @@ android {
     }
 
     signingConfigs {
+        // Debug builds get a *committed* key instead of the runner's throwaway
+        // ~/.android/debug.keystore.
+        //
+        // This is what makes in-app updates possible at all: Android refuses to install an APK
+        // whose signature differs from the installed one. With the per-run key every CI build was a
+        // different signer, so "download update -> install" always ended in INSTALL_FAILED_*
+        // (and the cache trick of caching ~/.android/debug.keystore silently saved nothing,
+        // because AGP never created that file on the runner).
+        //
+        // A debug key is not a secret - it is the well-known "android" password and cannot be used
+        // to publish anything. The *release* key (`jmreader.keystore`) stays git-ignored and comes
+        // from CI secrets.
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+
         create("release") {
             // Signing material is never committed (`*.keystore` is git-ignored). Locally it lives
             // at the project root; in CI it is restored from secrets before `assembleRelease`.
