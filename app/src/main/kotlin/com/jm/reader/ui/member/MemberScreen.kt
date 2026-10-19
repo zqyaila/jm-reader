@@ -40,7 +40,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.jm.reader.BuildConfig
 import com.jm.reader.data.model.Member
 import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.BottomNavReserve
@@ -103,6 +105,14 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
         MenuItem(Icons.Filled.SystemUpdate, s.updateCheck) { showUpdate = true }
 
         if (showUpdate) UpdateDialog(onDismiss = { showUpdate = false })
+
+        // Build identity, so a bug report can state which build it came from.
+        Text(
+            "v${BuildConfig.VERSION_NAME}",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp, top = 20.dp),
+        )
 
         // Language switcher
         Text(s.language, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(16.dp, 20.dp, 16.dp, 8.dp))

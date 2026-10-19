@@ -19,10 +19,13 @@ on:
   workflow_dispatch:
 
 # Serialise releases on a ref, so that a burst of pushes cannot interleave delete/create on the
-# same tag. cancel-in-progress additionally stops a superseded build from holding a runner.
+# same tag. Builds queue rather than cancel, so a superseded push still produces a release instead
+# of vanishing with a cancelled run. Every green push therefore replaces `latest`.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: true
+  # Queue instead of cancel: a cancelled run never reaches the publish job, so that commit would
+  # silently have no release. Builds are serialised; every green push still replaces `latest`.
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -77,12 +80,12 @@ jobs:
         run: |
           set -euo pipefail
           tag=latest
-          notes=$(printf 'Rolling build of `master`.\n\n| | |\n|---|---|\n| Commit | `%s` |\n| Built | %s |\n| Event | `%s` |\n\nThe assets are replaced on every green build on `master`, and their filenames are stable, so\n`.../releases/download/latest/JMReader-windows-x64.msi` always serves the newest build.\n' \
-            "$GITHUB_SHA" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$GITHUB_EVENT_NAME")
+          notes=$(printf 'Rolling build of `master`.\n\n| | |\n|---|---|\n| Version | `1.0.%s` |\n| Commit | `%s` |\n| Built | %s |\n| Event | `%s` |\n\nThe assets are replaced on every green build on `master`, and their filenames are stable, so\n`.../releases/download/latest/JMReader-windows-x64.msi` always serves the newest build.\n' \
+            "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$GITHUB_EVENT_NAME")
           gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Latest build" \
+            --title "Latest build (1.0.${GITHUB_RUN_NUMBER})" \
             --notes "$notes"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY"

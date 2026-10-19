@@ -169,7 +169,7 @@ private fun openBrowser(url: String, onError: (String) -> Unit) {
 
 private const val RELEASE_PAGE = "https://github.com/zqyaila/jm-reader/releases/latest"
 private const val PROXY_RELEASE_PAGE = "https://gh-proxy.com/https://github.com/zqyaila/jm-reader/releases/latest"
-private const val CURRENT_VERSION = "JMReader 1.0.0"
+private val CURRENT_VERSION = "JMReader " + (System.getProperty("jmreader.version") ?: "1.0.0")
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable () -> Unit) {

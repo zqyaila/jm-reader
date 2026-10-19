@@ -1,5 +1,10 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// Version is derived per build. CI passes `-PversionCode=<run_number> -PversionName=1.0.<run_number>`
+// so every published APK carries a real, increasing version; a local build keeps the defaults.
+val appVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
+val appVersionName = providers.gradleProperty("versionName").orNull ?: "1.0.0"
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -14,8 +19,8 @@ android {
         applicationId = "com.jm.reader"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         // Compile time, used by the in-app updater to decide whether the rolling GitHub release is
         // newer than the build this APK came from. The release is recreated on every green build,

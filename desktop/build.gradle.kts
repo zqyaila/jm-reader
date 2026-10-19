@@ -7,7 +7,11 @@ plugins {
 }
 
 group = "com.jm.reader"
-version = "1.0.0"
+
+// Same scheme as the Android module: CI supplies -PversionName=1.0.<run_number>, a local build
+// falls back to 1.0.0. jpackage reads `packageVersion`, the About screen reads the system property.
+val desktopVersion: String = providers.gradleProperty("versionName").orNull ?: "1.0.0"
+version = desktopVersion
 
 kotlin {
     // jpackage (used for the .exe / .msi installers) refuses to run on anything older than 17.
@@ -84,13 +88,13 @@ compose.desktop {
         mainClass = "com.jm.reader.desktop.MainKt"
 
         // Passed through to the app as system properties; the About screen reads them.
-        jvmArgs += listOf("-Xmx2g")
+        jvmArgs += listOf("-Xmx2g", "-Djmreader.version=$desktopVersion")
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
 
             packageName = "JMReader"
-            packageVersion = "1.0.0"
+            packageVersion = desktopVersion
 
             // -------------------------------------------------------------------------------
             // These five fields must stay ASCII. That is not cosmetic: it is the difference
