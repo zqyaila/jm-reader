@@ -178,7 +178,9 @@ class UpdateManager(
     // -----------------------------------------------------------------------
 
     private fun apiUrls(): List<String> {
-        val api = "https://api.github.com/repos/$OWNER/$REPO/releases/tags/latest"
+        // `releases/latest` (not a fixed `tags/latest` tag): every green build publishes its own
+        // versioned release, so the newest one is whatever GitHub marks as latest.
+        val api = "https://api.github.com/repos/$OWNER/$REPO/releases/latest"
         return listOf(api) + API_PREFIXES.map { it + api }
     }
 

@@ -1,8 +1,8 @@
 name: Release
 
-# One rolling release, refreshed by every green build on master:
+# One release per green build on master, tagged with the build's version:
 #
-#   https://github.com/<owner>/<repo>/releases/tag/latest
+#   https://github.com/<owner>/<repo>/releases/tag/v1.0.<run_number>
 #
 # Why this file exists: the build workflows only ever called `actions/upload-artifact`, which parks
 # files under a *run* (and expires them after 30 days). Nothing ever called the Releases API, so
@@ -10,21 +10,24 @@ name: Release
 # missing piece.
 #
 # Both platform builds run first - as reusable workflows, so each build's logic still lives in
-# exactly one place - and only when BOTH are green does the publish job replace the `latest`
-# release. A failing build therefore leaves the previous release untouched: `latest` never means
-# "half published".
+# exactly one place - and only when BOTH are green does the publish job create the release. A
+# failing build therefore leaves the previous release untouched, and the version it would have
+# carried simply never appears. Because every release is a real version, the Releases page is a
+# history of builds instead of a single entry that silently changes underneath you.
+#
+# The in-app updater reads `releases/latest`, i.e. whatever this job published most recently.
 on:
   push:
     branches: [master]
   workflow_dispatch:
 
-# Serialise releases on a ref, so that a burst of pushes cannot interleave delete/create on the
-# same tag. Builds queue rather than cancel, so a superseded push still produces a release instead
-# of vanishing with a cancelled run. Every green push therefore replaces `latest`.
+# Serialise releases on a ref, so that a burst of pushes cannot interleave tag creation. Builds
+# queue rather than cancel: a cancelled run never reaches the publish job, so that commit would
+# silently have no release at all.
 concurrency:
   group: release-${{ github.ref }}
   # Queue instead of cancel: a cancelled run never reaches the publish job, so that commit would
-  # silently have no release. Builds are serialised; every green push still replaces `latest`.
+  # silently have no release. Builds are serialised, so each run publishes exactly one version.
   cancel-in-progress: false
 
 permissions:
@@ -44,7 +47,7 @@ jobs:
     secrets: inherit
 
   publish:
-    name: Publish the rolling release
+    name: Publish the release
     needs: [windows, apk]
     runs-on: ubuntu-latest
     # The only job in the repo that can write to it. The build jobs above stay read-only.
@@ -70,22 +73,22 @@ jobs:
       #
       #   * `--clobber` would leave assets from an older commit sitting next to new ones whenever a
       #     filename changes, i.e. a release that is a mix of two builds.
-      #   * delete+create keeps the tag pointing at the commit that actually produced these assets,
-      #     and it is all-or-nothing: if this run is cancelled between the two commands the previous
-      #     release stays gone only until the next green build, which recreates it from scratch.
-      #     (Never reached at all when a build fails, because the job `needs` both of them.)
-      - name: Replace the `latest` release
+      #   * Re-running the same workflow run reuses the same run_number, so the tag can already
+      #     exist; deleting first makes a re-run idempotent instead of failing on "tag exists".
+      - name: Publish the versioned release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=latest
-          notes=$(printf 'Rolling build of `master`.\n\n| | |\n|---|---|\n| Version | `1.0.%s` |\n| Commit | `%s` |\n| Built | %s |\n| Event | `%s` |\n\nThe assets are replaced on every green build on `master`, and their filenames are stable, so\n`.../releases/download/latest/JMReader-windows-x64.msi` always serves the newest build.\n' \
-            "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$GITHUB_EVENT_NAME")
+          version="1.0.${GITHUB_RUN_NUMBER}"
+          tag="v${version}"
+          notes=$(printf 'Build `%s` of `master`.\n\n| | |\n|---|---|\n| Version | `%s` |\n| Commit | `%s` |\n| Built | %s |\n| Event | `%s` |\n\nInstallers and the debug APK are attached below. The in-app updater reads\n`releases/latest`, so this build is offered to anyone who taps "check for updates".\n' \
+            "$tag" "$version" "$GITHUB_SHA" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$GITHUB_EVENT_NAME")
           gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Latest build (1.0.${GITHUB_RUN_NUMBER})" \
+            --title "JMReader ${version}" \
+            --latest \
             --notes "$notes"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY"

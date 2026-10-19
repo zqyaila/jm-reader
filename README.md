@@ -60,7 +60,8 @@
 - 🔮 **猜你想看** — 按本地标签权重抽一个标签，再在该标签的结果里随机一本：
   常看的题材出现概率更高，但不是只看那一类（最多换 3 个标签，抽不到再退回
   `/random_recommend`）
-- 🔄 **应用内更新** — 「我的 → 检查更新」读取 GitHub `latest` 滚动发布：
+- 🔄 **应用内更新** — 「我的 → 检查更新」读取 GitHub 的 `releases/latest`
+  （每次绿构建都会发一个新版本，如 `v1.0.13`，安装包挂在对应 Release 下）：
   直连 `api.github.com` / `github.com` 失败时，自动改用 `github.akams.cn` 收录的反代
   （`gh-proxy.com`、`ghfast.top`、`ghproxy.net`）。下载支持 **Range 断点续传**（中断后只补剩余字节）
   并校验 release 附带的 sha256，然后交给系统安装器

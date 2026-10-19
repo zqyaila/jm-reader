@@ -58,7 +58,8 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
 - 🔮 **Guess you like** — picks a tag with probability proportional to that weight, searches it and
   opens a random result. Favourite genres are more likely but not the only outcome (up to three tags
   are tried, then it falls back to `/random_recommend`)
-- 🔄 **In-app updates** — "Me → Check for updates" reads the rolling GitHub `latest` release.
+- 🔄 **In-app updates** — "Me → Check for updates" reads GitHub's `releases/latest`
+  (every green build publishes its own version, e.g. `v1.0.13`, with the installers attached).
   When `api.github.com` / `github.com` are unreachable it falls back to the reverse proxies listed
   on github.akams.cn (`gh-proxy.com`, `ghfast.top`, `ghproxy.net`). Downloads resume with HTTP
   `Range` (only the missing bytes after a drop), are checked against the release's sha256, then
