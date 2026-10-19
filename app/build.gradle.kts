@@ -1,9 +1,17 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// Version is derived per build. CI passes `-PversionCode=<run_number> -PversionName=1.0.<run_number>`
-// so every published APK carries a real, increasing version; a local build keeps the defaults.
-val appVersionCode = providers.gradleProperty("versionCode").orNull?.toIntOrNull() ?: 1
-val appVersionName = providers.gradleProperty("versionName").orNull ?: "1.0.0"
+// Version is derived from a single number. CI passes `-PbuildNumber=<run_number>`, so every
+// published APK carries a real, increasing version; a local build keeps the defaults.
+//
+// A bare integer rather than `-PversionName=1.0.12` on purpose: that dotted value is re-parsed by
+// the desktop module's jpackage and arrived as `1` on the Windows runner, which failed the whole
+// build with "Illegal version for 'Msi': '1'". One plain number cannot be misread.
+//
+// `versionCode` is offset by 100 so CI codes stay above the local development builds that were
+// already installed by hand (installing a lower code over them fails with VERSION_DOWNGRADE).
+val buildNumber = providers.gradleProperty("buildNumber").orNull?.toIntOrNull() ?: 0
+val appVersionCode = if (buildNumber > 0) 100 + buildNumber else 1
+val appVersionName = if (buildNumber > 0) "1.0.$buildNumber" else "1.0.0"
 
 plugins {
     id("com.android.application")

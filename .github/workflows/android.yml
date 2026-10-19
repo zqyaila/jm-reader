@@ -76,7 +76,7 @@ jobs:
           ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest
 
       - name: Build debug APK
-        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
+        run: ./gradlew --no-daemon --stacktrace :app:assembleDebug -PbuildNumber=${{ github.run_number }}
 
       - name: Restore release keystore
         if: env.HAS_KEYSTORE == 'true'
@@ -90,7 +90,7 @@ jobs:
           JMREADER_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           JMREADER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           JMREADER_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
+        run: ./gradlew --no-daemon --stacktrace :app:assembleRelease -PbuildNumber=${{ github.run_number }}
 
       - name: Collect APKs
         run: |

@@ -8,10 +8,20 @@ plugins {
 
 group = "com.jm.reader"
 
-// Same scheme as the Android module: CI supplies -PversionName=1.0.<run_number>, a local build
-// falls back to 1.0.0. jpackage reads `packageVersion`, the About screen reads the system property.
-val desktopVersion: String = providers.gradleProperty("versionName").orNull ?: "1.0.0"
+// Same scheme as the Android module: CI supplies -PbuildNumber=<run_number>, a local build falls
+// back to 1.0.0. jpackage reads `packageVersion`, the About screen reads the system property.
+//
+// The number is passed *bare* because jpackage parses `packageVersion` as MAJOR.MINOR.BUILD and
+// rejects anything else - a dotted `-PversionName=1.0.12` reached it as `1` on the Windows runner
+// and failed configuration with "Illegal version for 'Msi': '1'".
+val buildNumber = providers.gradleProperty("buildNumber").orNull?.toIntOrNull() ?: 0
+val desktopVersion: String = if (buildNumber > 0) "1.0.$buildNumber" else "1.0.0"
 version = desktopVersion
+
+// jpackage/Windows Installer cap BUILD at 65535; run_number will not get there, but clamping keeps
+// a stray property from failing the whole packaging step.
+val desktopPackageVersion: String =
+    if (buildNumber > 0) "1.0.${buildNumber.coerceAtMost(65535)}" else "1.0.0"
 
 kotlin {
     // jpackage (used for the .exe / .msi installers) refuses to run on anything older than 17.
@@ -94,7 +104,7 @@ compose.desktop {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe)
 
             packageName = "JMReader"
-            packageVersion = desktopVersion
+            packageVersion = desktopPackageVersion
 
             // -------------------------------------------------------------------------------
             // These five fields must stay ASCII. That is not cosmetic: it is the difference

@@ -118,7 +118,7 @@ jobs:
       # Pure-logic tests: JM id parsing, de-scramble strip geometry, version comparison, HTML
       # stripping, the crypto round trip and the three-language string table. No network needed.
       - name: Unit tests
-        run: .\gradlew.bat --no-daemon --stacktrace :desktop:test -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
+        run: .\gradlew.bat --no-daemon --stacktrace :desktop:test -PbuildNumber=${{ github.run_number }}
 
       - name: Package MSI and EXE
         shell: pwsh
@@ -126,7 +126,7 @@ jobs:
           # Tee the output so the diagnostics step below can quote its tail, then re-raise the real
           # exit code: a pipeline would otherwise mask it, and a silently green packaging step is
           # worse than a red one.
-          .\gradlew.bat --no-daemon --stacktrace :desktop:packageMsi :desktop:packageExe -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }} 2>&1 |
+          .\gradlew.bat --no-daemon --stacktrace :desktop:packageMsi :desktop:packageExe -PbuildNumber=${{ github.run_number }} 2>&1 |
             Tee-Object -FilePath packaging.log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
