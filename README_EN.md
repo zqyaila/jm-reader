@@ -65,9 +65,11 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   handed to the system installer
 - 🎬 **Secondary content** — novels, movies, games, blogs, forum
 - 🖥️ **Windows desktop build** — a separate `:desktop` module (Compose Multiplatform) reusing the
-  same protocol implementation and design language: browse / search / detail / read, packaged into
-  **MSI + EXE installers** with the JDK's own `jpackage` (runtime bundled, no Java needed on the
-  target machine). Scope and acceptance criteria live in
+  same protocol and the same "ink & ember" design: unbordered covers, ember accent, and the same
+  **surprise me / guess you like / reading stats** actions on home (stats weighted by pages read in
+  the reader, exactly like the phone). Settings opens the stats screen and the GitHub release page
+  (with a proxy link). Packaged into **MSI + EXE installers** with the JDK's own `jpackage`
+  (runtime bundled, no Java needed on the target machine). Scope and acceptance criteria live in
   [SCOPE_AND_ACCEPTANCE.md](SCOPE_AND_ACCEPTANCE.md)
 - 🎨 **Material 3 Expressive design tokens** — type / shape / spacing / motion tokens centralised in
   `ui/theme/`, so re-skinning the whole app is a change to the root `MaterialTheme(...)` call;

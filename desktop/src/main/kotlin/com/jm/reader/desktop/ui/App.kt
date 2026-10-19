@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
@@ -34,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
@@ -43,6 +43,7 @@ import com.jm.reader.desktop.core.ApiClient
 import com.jm.reader.desktop.core.AppStrings
 import com.jm.reader.desktop.core.HostManager
 import com.jm.reader.desktop.core.LanguageManager
+import com.jm.reader.desktop.core.ReadingStats
 import com.jm.reader.desktop.core.Repository
 import com.jm.reader.desktop.core.Session
 import okhttp3.OkHttpClient
@@ -62,6 +63,7 @@ sealed interface Screen {
     data object Home : Screen
     data object Search : Screen
     data object Settings : Screen
+    data object Stats : Screen
     data class Detail(val id: String) : Screen
     data class Reader(val albumId: String, val chapterId: String, val title: String) : Screen
 }
@@ -83,6 +85,7 @@ class AppContainer {
     val api = ApiClient(session, http)
     val hostManager = HostManager(session, http)
     val repository = Repository(session, api, hostManager)
+    val stats = ReadingStats()
 }
 
 @Composable
@@ -102,6 +105,7 @@ fun App(container: AppContainer) {
         LocalSession provides container.session,
         LocalLanguageManager provides container.languageManager,
         LocalAppStrings provides strings,
+        LocalStats provides container.stats,
         LocalDarkTheme provides dark,
     ) {
         JMReaderTheme(dark) {
@@ -118,6 +122,8 @@ fun App(container: AppContainer) {
 private fun AppShell(container: AppContainer, dark: Boolean, onToggleDark: () -> Unit) {
     val stack = remember { mutableStateListOf<Screen>(Screen.Splash) }
     val current = stack.last()
+    // Hoisted so the feed and its scroll position survive a trip into a comic and back.
+    val homeState = remember { HomeState() }
 
     val push: (Screen) -> Unit = { stack.add(it) }
     val pop: () -> Unit = { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
@@ -137,8 +143,10 @@ private fun AppShell(container: AppContainer, dark: Boolean, onToggleDark: () ->
                 )
 
                 Screen.Home -> HomeScreen(
+                    state = homeState,
                     onOpenComic = { push(Screen.Detail(it)) },
                     onOpenSearch = { switchTo(Screen.Search) },
+                    onOpenStats = { push(Screen.Stats) },
                 )
 
                 Screen.Search -> SearchScreen(
@@ -148,7 +156,10 @@ private fun AppShell(container: AppContainer, dark: Boolean, onToggleDark: () ->
                 Screen.Settings -> SettingsScreen(
                     dark = dark,
                     onToggleDark = onToggleDark,
+                    onOpenStats = { push(Screen.Stats) },
                 )
+
+                Screen.Stats -> StatsScreen(onBack = pop)
 
                 is Screen.Detail -> DetailScreen(
                     id = current.id,
@@ -187,11 +198,9 @@ private fun GlassBottomNav(
     modifier: Modifier = Modifier,
 ) {
     val s = LocalAppStrings.current
-    val dark = LocalDarkTheme.current
-    // Selected item = a solid accent pill with an explicit on-colour, so the label stays legible
-    // no matter what the glass is refracting.
-    val accent = if (dark) BrandOrangeSoft else BrandOrangeDeep
-    val onAccent = if (dark) DarkBg else Color.White
+    // A 14% accent wash, not a solid pill: the bar should recede, the active tab should still be
+    // unmistakable. A saturated block behind a 56dp tab was the loudest thing on the window.
+    val accent = MaterialTheme.colorScheme.primary
     val idle = MaterialTheme.colorScheme.onSurfaceVariant
     val items: List<Triple<Screen, String, ImageVector>> = listOf(
         Triple(Screen.Home, s.home, Icons.Filled.Home),
@@ -224,14 +233,15 @@ private fun GlassBottomNav(
                     .offset { IntOffset((position * itemWidth.toPx()).roundToInt(), 0) }
                     .width(itemWidth)
                     .height(56.dp)
-                    .clip(GlassCapsule)
-                    .background(accent),
+                    .padding(horizontal = 6.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(accent.copy(alpha = 0.14f)),
             )
 
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 items.forEachIndexed { index, (tab, label, icon) ->
                     val active = index == selected
-                    val tint = if (active) onAccent else idle
+                    val tint = if (active) accent else idle
                     Row(
                         Modifier
                             .width(itemWidth)
@@ -250,7 +260,7 @@ private fun GlassBottomNav(
                             label,
                             color = tint,
                             style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                             modifier = Modifier.padding(start = 8.dp),
                         )
                     }

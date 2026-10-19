@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import com.jm.reader.desktop.core.ImageLoader
 import com.jm.reader.desktop.core.UiLanguage
 import kotlinx.coroutines.delay
+import java.awt.Desktop
+import java.net.URI
 import kotlinx.coroutines.launch
 
 /**
@@ -38,7 +40,7 @@ import kotlinx.coroutines.launch
  * line is the first thing that answers whether discovery picked a real API server or fell back.
  */
 @Composable
-fun SettingsScreen(dark: Boolean, onToggleDark: () -> Unit) {
+fun SettingsScreen(dark: Boolean, onToggleDark: () -> Unit, onOpenStats: () -> Unit) {
     val s = LocalAppStrings.current
     val session = LocalSession.current
     val languageManager = LocalLanguageManager.current
@@ -77,6 +79,30 @@ fun SettingsScreen(dark: Boolean, onToggleDark: () -> Unit) {
                             OutlinedButton(onClick = { languageManager.set(lang) }) {
                                 Text(lang.displayName)
                             }
+                        }
+                    }
+                }
+            }
+
+            SettingsCard(title = s.statsTitle) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = onOpenStats) { Text(s.open) }
+                }
+            }
+
+            SettingsCard(title = s.checkUpdate) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        CURRENT_VERSION,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { openBrowser(RELEASE_PAGE) { flash(it) } }) {
+                            Text("GitHub")
+                        }
+                        OutlinedButton(onClick = { openBrowser(PROXY_RELEASE_PAGE) { flash(it) } }) {
+                            Text(s.openViaProxy)
                         }
                     }
                 }
@@ -129,6 +155,21 @@ fun SettingsScreen(dark: Boolean, onToggleDark: () -> Unit) {
         }
     }
 }
+
+/** Opens a URL in the user's browser; a failure is reported through [onError]. */
+private fun openBrowser(url: String, onError: (String) -> Unit) {
+    runCatching {
+        if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+            Desktop.getDesktop().browse(URI(url))
+        } else {
+            onError("Desktop browsing is not supported on this system")
+        }
+    }.onFailure { onError(it.message ?: "Cannot open browser") }
+}
+
+private const val RELEASE_PAGE = "https://github.com/zqyaila/jm-reader/releases/latest"
+private const val PROXY_RELEASE_PAGE = "https://gh-proxy.com/https://github.com/zqyaila/jm-reader/releases/latest"
+private const val CURRENT_VERSION = "JMReader 1.0.0"
 
 @Composable
 private fun SettingsCard(title: String, content: @Composable () -> Unit) {

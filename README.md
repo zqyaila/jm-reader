@@ -66,7 +66,9 @@
   并校验 release 附带的 sha256，然后交给系统安装器
 - 🎬 **其它内容** — 小说、影片、游戏、部落格、论坛
 - 🖥️ **Windows 桌面版** — 独立的 `:desktop` 模块，用 Compose Multiplatform 复用同一套协议实现与
-  设计语言，可浏览 / 搜索 / 看详情 / 阅读，用 JDK 自带 `jpackage` 打出 **MSI + EXE 安装向导**
+  「墨与火」设计：同款封面网格、无边框卡片、琥珀强调色，首页同样有 **随机一本 / 猜你想看 /
+  阅读统计**（统计规则与手机端一致：只在阅读器里按已读页数计权），设置里可打开阅读统计与
+  GitHub 发布页（含反代入口）。用 JDK 自带 `jpackage` 打出 **MSI + EXE 安装向导**
   （内嵌运行时，目标机无需装 Java）。范围与验收标准见
   [SCOPE_AND_ACCEPTANCE.md](SCOPE_AND_ACCEPTANCE.md)
 - 🎨 **Material 3 Expressive 设计令牌** — 排版 / 形状 / 间距 / 动效四组令牌集中在 `ui/theme/`，

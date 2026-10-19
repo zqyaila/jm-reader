@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -60,10 +61,10 @@ object GlassSpec {
     const val HighlightAngle = 45f
     const val ShadowAlpha = 0.08f
 
-    const val BottomBarFogAlphaDark = 0.78f
-    const val BottomBarFogAlphaLight = 0.80f
-    const val TopBarFogAlphaDark = 0.52f
-    const val TopBarFogAlphaLight = 0.58f
+    const val BottomBarFogAlphaDark = 0.92f
+    const val BottomBarFogAlphaLight = 0.94f
+    const val TopBarFogAlphaDark = 0.86f
+    const val TopBarFogAlphaLight = 0.90f
     const val PanelFogAlphaDark = 0.45f
     const val PanelFogAlphaLight = 0.52f
 
@@ -138,7 +139,7 @@ fun Modifier.liquidGlass(
 
     var base = this
     if (elevation > 0.dp) {
-        val shadowTint = Color.Black.copy(alpha = GlassSpec.ShadowAlpha)
+        val shadowTint = Color.Black.copy(alpha = 0.28f)
         base = base.shadow(
             elevation = elevation,
             shape = shape,
@@ -155,28 +156,9 @@ fun Modifier.liquidGlass(
         Modifier.border(borderWidth, rim, shape)
     }
 
-    return base
-        .drawBehind {
-            // Specular highlight: a sheen along the spec's 45° axis — the signature "pane of
-            // glass" cue. Centred on the surface so it stays put as panes resize.
-            val rad = Math.toRadians(GlassSpec.HighlightAngle.toDouble())
-            val ux = cos(rad).toFloat()
-            val uy = sin(rad).toFloat()
-            val reach = (size.width + size.height) / 2f
-            val centre = Offset(size.width / 2f, size.height / 2f)
-            drawRect(
-                Brush.linearGradient(
-                    colors = listOf(
-                        GlassSpec.Specular.copy(alpha = GlassSpec.HighlightAlpha),
-                        GlassSpec.Specular.copy(alpha = GlassSpec.HighlightAlpha * 0.25f),
-                        Color.Transparent,
-                    ),
-                    start = centre - Offset(ux * reach, uy * reach),
-                    end = centre + Offset(ux * reach, uy * reach),
-                ),
-            )
-        }
-        .then(rimModifier)
+    // The 45° specular sheen was removed with the redesign: at the density the bar needs for
+    // legibility it read as a smudge over the covers rather than as glass.
+    return base.then(rimModifier)
 }
 
 /** Panel / card: fog + sheen + rim, with the standard elevation. */
@@ -187,14 +169,21 @@ fun Modifier.glassSurface(
     borderColor: Color? = null,
     borderWidth: Dp = 1.dp,
     elevation: Dp = 8.dp,
-): Modifier = liquidGlass(
-    shape = shape,
-    kind = GlassKind.Panel,
-    elevation = elevation,
-    fog = tint,
-    borderColor = borderColor,
-    borderWidth = borderWidth,
-)
+): Modifier {
+    val fill = tint ?: MaterialTheme.colorScheme.surface
+    val border = borderColor ?: MaterialTheme.colorScheme.outlineVariant
+    var base = this
+    if (elevation > 0.dp) {
+        base = base.shadow(
+            elevation = elevation.coerceAtMost(10.dp) * 0.5f,
+            shape = shape,
+            clip = false,
+            ambientColor = Color.Black.copy(alpha = 0.16f),
+            spotColor = Color.Black.copy(alpha = 0.16f),
+        )
+    }
+    return base.clip(shape).background(fill).border(borderWidth, border, shape)
+}
 
 /**
  * Clickable glass with the spec's press behaviour: the surface dips and its highlight brightens,
@@ -270,57 +259,29 @@ fun GlassBar(
     }
 }
 
-/** Full-window app background: gradient plus soft colour blobs for the glass to refract. */
+/**
+ * Full-window background: one vertical ink gradient plus a single warm glow in the top-right
+ * corner, at ~10% opacity. The old version painted four blurred colour blobs, which on a large
+ * window turned into visible coloured haze around the content.
+ */
 @Composable
 fun AppBackdrop(modifier: Modifier = Modifier) {
     val dark = LocalDarkTheme.current
-    Box(modifier.fillMaxSize().background(if (dark) BackdropBrushDark else BackdropBrushLight)) {
-        Box(
-            Modifier
-                .size(360.dp)
-                .offset(x = (-90).dp, y = (-60).dp)
-                .backdropBlur(80.dp)
-                .background(
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(if (dark) BackdropBrushDark else BackdropBrushLight)
+            .drawBehind {
+                drawRect(
                     Brush.radialGradient(
-                        listOf(BrandOrange.copy(alpha = BackdropBlobAlpha), Color.Transparent),
+                        colors = listOf(
+                            BrandOrange.copy(alpha = if (dark) 0.07f else 0f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width * 0.82f, size.height * 0.02f),
+                        radius = size.width * 0.95f,
                     ),
-                ),
-        )
-        Box(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .size(340.dp)
-                .offset(x = 70.dp, y = 100.dp)
-                .backdropBlur(80.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(GlassAccentBlue.copy(alpha = BackdropBlobAlpha), Color.Transparent),
-                    ),
-                ),
-        )
-        Box(
-            Modifier
-                .align(Alignment.CenterEnd)
-                .size(280.dp)
-                .offset(x = 130.dp, y = (-40).dp)
-                .backdropBlur(90.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(GlassAccentViolet.copy(alpha = BackdropBlobAlpha * 0.85f), Color.Transparent),
-                    ),
-                ),
-        )
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .size(240.dp)
-                .offset(x = (-60).dp, y = 60.dp)
-                .backdropBlur(90.dp)
-                .background(
-                    Brush.radialGradient(
-                        listOf(GlassAccentTeal.copy(alpha = BackdropBlobAlpha * 0.7f), Color.Transparent),
-                    ),
-                ),
-        )
-    }
+                )
+            },
+    )
 }

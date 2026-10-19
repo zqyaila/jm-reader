@@ -29,7 +29,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,8 +72,16 @@ fun ReaderScreen(
     onOpenChapter: (chapterId: String, chapterName: String) -> Unit,
 ) {
     val repo = LocalRepository.current
+    val stats = LocalStats.current
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
+
+    // Time is banked per work; the reader only exists while this screen is composed, so this is
+    // "time spent reading" rather than "app open".
+    DisposableEffect(albumId) {
+        val started = System.currentTimeMillis()
+        onDispose { stats.addReadingTime(albumId, System.currentTimeMillis() - started) }
+    }
 
     var read by remember(chapterId) { mutableStateOf<ReadData?>(null) }
     var loading by remember(chapterId) { mutableStateOf(true) }
@@ -81,14 +91,21 @@ fun ReaderScreen(
     LaunchedEffect(albumId) {
         // The chapter list is what makes "next chapter" possible; failing to get it only costs
         // that button, so a failure is swallowed rather than blocking the reader.
-        series = (repo.getAlbum(albumId) as? RepoResult.Ok)?.data?.series.orEmpty()
+        val detail = (repo.getAlbum(albumId) as? RepoResult.Ok)?.data
+        series = detail?.series.orEmpty()
+        // Tags are attached here so this work's pages can weigh its genres in "guess you like".
+        detail?.let { stats.setMeta(albumId, it.name, it.tags) }
     }
 
     LaunchedEffect(chapterId) {
         loading = true
         error = null
         when (val r = repo.comicRead(chapterId)) {
-            is RepoResult.Ok -> read = r.data
+            is RepoResult.Ok -> {
+                read = r.data
+                // Only an actually opened chapter counts as reading.
+                stats.recordChapter(albumId, r.data.id)
+            }
             is RepoResult.Err -> error = r.message
         }
         loading = false
@@ -101,6 +118,13 @@ fun ReaderScreen(
         // Start each chapter at the top.
         listState.scrollToItem(0)
         runCatching { focus.requestFocus() }
+    }
+
+    // Furthest page reached in this chapter; only increases, so scrolling back costs nothing.
+    LaunchedEffect(listState, read, chapterId) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
+            stats.recordPage(albumId, chapterId, index + 1)
+        }
     }
 
     val sorted = remember(series) { series.sortedBy { it.sort } }

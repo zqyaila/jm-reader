@@ -120,8 +120,7 @@ fun AppTopBar(
             Column(Modifier.weight(1f)) {
                 Text(
                     title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -198,8 +197,11 @@ fun EmptyView(message: String, modifier: Modifier = Modifier) {
 // ---------------------------------------------------------------------------
 
 /**
- * One grid tile: cover, category chip, JM number and caption on a single glass pane, so a grid of
- * them reads as glass rather than as floating text over the canvas.
+ * One grid tile: cover, JM number and caption, with no glass frame.
+ *
+ * The redesign removed the frosted pane around every cover. On a desktop grid the pane produced a
+ * tinted halo on all four sides of *every* tile, which read as noise around the artwork. [rank]
+ * draws the weekly numeral, [progress] draws a hairline bar at the bottom of the cover.
  */
 @Composable
 fun ComicCard(
@@ -208,38 +210,88 @@ fun ComicCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showAuthor: Boolean = false,
+    rank: Int? = null,
+    progress: Float? = null,
 ) {
-    Column(
-        modifier = modifier
-            .glassClickable(onClick = onClick, shape = GlassShape)
-            .glassSurface(shape = GlassShape, elevation = 6.dp)
-            .padding(6.dp),
-    ) {
+    val coverShape = RoundedCornerShape(12.dp)
+    Column(modifier = modifier.glassClickable(onClick = onClick, shape = coverShape)) {
         val cover = if (item.image.isNotBlank()) item.image else repo.comicCover(item.id, item.updateAt)
         Box(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(3f / 4f)
-                .clip(GlassShapeInner),
+                .clip(coverShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             RemoteImage(
                 url = cover,
                 contentDescription = item.name,
                 modifier = Modifier.fillMaxSize(),
             )
-            item.category?.title?.takeIf { it.isNotBlank() }?.let { cat ->
-                Badge(text = cat, modifier = Modifier.align(Alignment.TopStart).padding(4.dp))
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(34.dp)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.45f)),
+                        ),
+                    ),
+            )
+            if (rank != null) {
+                Text(
+                    rank.toString().padStart(2, '0'),
+                    color = if (rank <= 3) MaterialTheme.colorScheme.onPrimary else Color.White,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (rank <= 3) MaterialTheme.colorScheme.primary
+                            else Color.Black.copy(alpha = 0.55f),
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
             }
-            // Every work states which JM number it is, so a reader can identify (and search for)
-            // it without opening the detail page.
             JmId.display(item.id).takeIf { it.isNotEmpty() }?.let { label ->
-                Badge(text = label, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp))
+                Text(
+                    label,
+                    color = Color.White.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(5.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.Black.copy(alpha = 0.38f))
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                )
+            }
+            if (progress != null) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .height(3.dp)
+                        .background(Color.White.copy(alpha = 0.16f)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(progress.coerceIn(0f, 1f))
+                            .height(3.dp)
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                }
             }
         }
-        Column(Modifier.fillMaxWidth().padding(top = 6.dp, start = 2.dp, end = 2.dp, bottom = 2.dp)) {
+        Column(Modifier.fillMaxWidth().padding(top = 7.dp, start = 1.dp, end = 1.dp)) {
             Text(
                 item.name,
                 style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -252,7 +304,7 @@ fun ComicCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 1.dp),
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }
