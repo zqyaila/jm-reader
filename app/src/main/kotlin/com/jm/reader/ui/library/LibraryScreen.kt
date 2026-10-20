@@ -67,7 +67,7 @@ import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
-import com.jm.reader.ui.components.BookshelfCarousel
+import com.jm.reader.ui.components.ShelfBank
 import com.jm.reader.ui.components.ComicGrid
 import com.jm.reader.ui.components.ShelfItem
 import com.jm.reader.ui.components.EmptyView
@@ -242,18 +242,28 @@ private fun FavoritesList(
             // A real retry control: the only recovery used to be leaving and re-entering the tab.
             error != null -> ErrorView(error!!, onRetry = { reload++ }, modifier = Modifier.fillMaxSize())
             items.isEmpty() -> EmptyView(s.emptyFavorites, Modifier.fillMaxSize())
-            shelf -> BookshelfCarousel(
-                items = items.map {
-                    ShelfItem(
-                        id = it.id,
-                        title = it.name,
-                        subtitle = it.author.orEmpty(),
-                        cover = it.image.ifBlank { repo.comicCover(it.id, it.updateAt) },
-                    )
-                },
-                onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
-                modifier = Modifier.fillMaxSize(),
-            )
+            shelf -> Column(Modifier.fillMaxSize()) {
+                ShelfBank(
+                    items = items.map {
+                        ShelfItem(
+                            id = it.id,
+                            title = it.name,
+                            subtitle = it.author.orEmpty(),
+                            cover = it.image.ifBlank { repo.comicCover(it.id, it.updateAt) },
+                        )
+                    },
+                    onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
+                )
+                // Normal layout below the bank, exactly like the reference: the shelf is a header,
+                // not a replacement for the grid.
+                ComicGrid(
+                    items = items,
+                    repo = repo,
+                    onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
+                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = BottomNavReserve),
+                    modifier = Modifier.weight(1f),
+                )
+            }
             else -> ComicGrid(
                 items = items,
                 repo = repo,
@@ -373,25 +383,6 @@ private fun LocalHistory(
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = { confirmClear = true }) { Text(s.historyClear) }
-                }
-                if (shelf) {
-                    BookshelfCarousel(
-                        items = entries.map { entry ->
-                            ShelfItem(
-                                id = entry.albumId,
-                                title = entry.name,
-                                subtitle = entry.episodeName ?: entry.author.orEmpty(),
-                                cover = repo.comicCover(entry.albumId, entry.updateAt),
-                                // History knows the page, not the size; a capped bar still tells
-                                // "started" from "finished the sample".
-                                progress = ((entry.pageIndex % 20) / 20f + 0.05f).coerceIn(0f, 1f)
-                                    .takeIf { entry.hasProgress },
-                            )
-                        },
-                        onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    return@Column
                 }
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -679,18 +670,51 @@ private fun DownloadsList(
         if (albums.isEmpty()) {
             EmptyView(s.emptyDownloads, Modifier.fillMaxSize())
         } else if (shelf) {
-            BookshelfCarousel(
-                items = albums.sortedByDescending { it.timestamp }.map { album ->
-                    ShelfItem(
-                        id = album.albumId,
-                        title = album.name,
-                        subtitle = "${album.chapterCount} 话 · ${album.pageCount} 页",
-                        cover = repo.comicCover(album.albumId, album.timestamp),
-                    )
-                },
-                onOpen = { navController.navigate(Routes.offlineReader(it.id)) },
-                modifier = Modifier.fillMaxSize(),
-            )
+            Column(Modifier.fillMaxSize()) {
+                ShelfBank(
+                    items = albums.sortedByDescending { it.timestamp }.map { album ->
+                        ShelfItem(
+                            id = album.albumId,
+                            title = album.name,
+                            subtitle = "${album.chapterCount} 话 · ${album.pageCount} 页",
+                            cover = repo.comicCover(album.albumId, album.timestamp),
+                        )
+                    },
+                    onOpen = { navController.navigate(Routes.offlineReader(it.id)) },
+                )
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = BottomNavReserve)) {
+                    items(albums.sortedByDescending { it.timestamp }, key = { it.albumId }) { album ->
+                        val prog = downloading[album.albumId]
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                                .glassClickable(shape = GlassShape) { navController.navigate(Routes.offlineReader(album.albumId)) }
+                                .glassSurface(shape = GlassShape)
+                                .padding(horizontal = 10.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(album.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    if (prog?.phase == "downloading") {
+                                        s.downloadProgressFmt.format(prog.current, prog.total)
+                                    } else {
+                                        "${album.pageCount} P  ·  ${s.downloaded}"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                                Text(s.offlineRead, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { deleteTarget = album }) {
+                                Icon(Icons.Filled.Delete, contentDescription = s.delete, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
         } else {
             LazyColumn(
                 Modifier.fillMaxSize(),

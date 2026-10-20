@@ -15,13 +15,13 @@ group = "com.jm.reader"
 // rejects anything else - a dotted `-PversionName=1.0.12` reached it as `1` on the Windows runner
 // and failed configuration with "Illegal version for 'Msi': '1'".
 val buildNumber = providers.gradleProperty("buildNumber").orNull?.toIntOrNull() ?: 0
-val desktopVersion: String = if (buildNumber > 0) "1.0.$buildNumber" else "1.0.0"
+val desktopVersion: String = if (buildNumber > 0) "2.0.$buildNumber" else "2.0.0"
 version = desktopVersion
 
 // jpackage/Windows Installer cap BUILD at 65535; run_number will not get there, but clamping keeps
 // a stray property from failing the whole packaging step.
 val desktopPackageVersion: String =
-    if (buildNumber > 0) "1.0.${buildNumber.coerceAtMost(65535)}" else "1.0.0"
+    if (buildNumber > 0) "2.0.${buildNumber.coerceAtMost(65535)}" else "2.0.0"
 
 kotlin {
     // jpackage (used for the .exe / .msi installers) refuses to run on anything older than 17.

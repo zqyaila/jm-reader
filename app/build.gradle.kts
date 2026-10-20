@@ -3,6 +3,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 // Version is derived from a single number. CI passes `-PbuildNumber=<run_number>`, so every
 // published APK carries a real, increasing version; a local build keeps the defaults.
 //
+// Majors: 1.x = "ink & ember" era, 2.x = the reading-archive shelf and reading tools.
+//
 // A bare integer rather than `-PversionName=1.0.12` on purpose: that dotted value is re-parsed by
 // the desktop module's jpackage and arrived as `1` on the Windows runner, which failed the whole
 // build with "Illegal version for 'Msi': '1'". One plain number cannot be misread.
@@ -10,8 +12,10 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 // `versionCode` is offset by 100 so CI codes stay above the local development builds that were
 // already installed by hand (installing a lower code over them fails with VERSION_DOWNGRADE).
 val buildNumber = providers.gradleProperty("buildNumber").orNull?.toIntOrNull() ?: 0
-val appVersionCode = if (buildNumber > 0) 100 + buildNumber else 1
-val appVersionName = if (buildNumber > 0) "1.0.$buildNumber" else "1.0.0"
+// 2.0 is the archive shelf / reading-tools line. The 2000 offset keeps CI codes far above the
+// 1.x builds already installed, so the updater still sees an upgrade.
+val appVersionCode = if (buildNumber > 0) 2000 + buildNumber else 2000
+val appVersionName = if (buildNumber > 0) "2.0.$buildNumber" else "2.0.0"
 
 plugins {
     id("com.android.application")
