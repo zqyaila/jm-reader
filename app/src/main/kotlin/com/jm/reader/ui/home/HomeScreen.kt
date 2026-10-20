@@ -86,6 +86,7 @@ import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalStats
+import com.jm.reader.ui.components.ArchiveReveal
 import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
@@ -322,6 +323,9 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
             }
     }
 
+    // Replays the stagger when a new page of content lands; a scroll does not change it.
+    val revealGeneration = state.latest.firstOrNull()?.id ?: "empty"
+
     Box(modifier = modifier.fillMaxSize()) {
         when {
             state.loading && state.latest.isEmpty() -> LoadingView()
@@ -336,6 +340,7 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
+                    ArchiveReveal(index = 0, generation = revealGeneration) {
                     HomeHeader(
                         title = s.homeGreeting,
                         // A catalogue code, not a wordmark: the masthead's second line is the
@@ -344,9 +349,11 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                         onSearch = { navController.navigate(Routes.search()) },
                         onRefresh = { scope.launch { loadInitial() } },
                     )
+                    }
                 }
                     if (state.promote.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
+                            ArchiveReveal(index = 1, generation = revealGeneration) {
                             HeroCarousel(
                                 repo = repo,
                                 items = state.promote.take(5),
@@ -354,14 +361,18 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                                 onPageChanged = { vm.heroIndex = it },
                                 onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
                             )
+                            }
                         }
                     }
 
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        QuickLinks(navController)
+                        ArchiveReveal(index = 2, generation = revealGeneration) {
+                            QuickLinks(navController)
+                        }
                     }
 
                     item(span = { GridItemSpan(maxLineSpan) }) {
+                        ArchiveReveal(index = 3, generation = revealGeneration) {
                         SurpriseEntry(
                             icon = Icons.Filled.Shuffle,
                             label = s.randomComic,
@@ -369,9 +380,11 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                             loading = randomLoading,
                             onClick = { scope.launch { surprise() } },
                         )
+                        }
                     }
 
                     item(span = { GridItemSpan(maxLineSpan) }) {
+                        ArchiveReveal(index = 4, generation = revealGeneration) {
                         SurpriseEntry(
                             icon = Icons.Filled.AutoAwesome,
                             label = s.guessYouLike,
@@ -379,6 +392,7 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                             loading = guessLoading,
                             onClick = { scope.launch { guess() } },
                         )
+                        }
                     }
 
                     if (recentItems.isNotEmpty()) {

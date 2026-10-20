@@ -2,6 +2,7 @@ package com.jm.reader.ui
 
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,6 +44,7 @@ import com.jm.reader.ui.lines.LinesScreen
 import com.jm.reader.ui.splash.SplashScreen
 import com.jm.reader.ui.stats.StatsScreen
 import com.jm.reader.ui.theme.AppBackdrop
+import com.jm.reader.ui.theme.ArchiveMotion
 import com.jm.reader.ui.theme.AppTheme
 import com.jm.reader.ui.theme.JMReaderTheme
 import com.jm.reader.ui.theme.LocalAppTheme
@@ -97,10 +99,27 @@ fun AppNavHost(navController: NavHostController) {
     NavHost(
         navController = navController,
         startDestination = Routes.SPLASH,
-        enterTransition = { fadeIn(tween(220)) },
-        exitTransition = { fadeOut(tween(180)) },
-        popEnterTransition = { fadeIn(tween(220)) },
-        popExitTransition = { fadeOut(tween(180)) },
+        // Archive route motion: the incoming page slides a twelfth of its width while fading in
+        // (420 ms), and the outgoing one only fades (320 ms) - the reference project's enter/exit
+        // asymmetry, which makes a stack feel like paper being lifted rather than cross-faded.
+        enterTransition = {
+            slideInHorizontally(
+                animationSpec = tween(ArchiveMotion.EnterMs, easing = ArchiveMotion.Enter),
+                initialOffsetX = { it / 12 },
+            ) + fadeIn(tween(ArchiveMotion.EnterMs, easing = ArchiveMotion.Enter))
+        },
+        exitTransition = {
+            fadeOut(tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit))
+        },
+        popEnterTransition = {
+            slideInHorizontally(
+                animationSpec = tween(ArchiveMotion.EnterMs, easing = ArchiveMotion.Enter),
+                initialOffsetX = { -it / 12 },
+            ) + fadeIn(tween(ArchiveMotion.EnterMs, easing = ArchiveMotion.Enter))
+        },
+        popExitTransition = {
+            fadeOut(tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit))
+        },
     ) {
         composable(Routes.SPLASH) { SplashScreen(navController) }
         composable(Routes.MAIN) { MainScreen(navController) }

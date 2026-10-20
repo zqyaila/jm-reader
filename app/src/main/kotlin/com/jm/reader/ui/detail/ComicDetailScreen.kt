@@ -85,6 +85,7 @@ import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.LocalStats
 import com.jm.reader.ui.components.AppTopBar
+import com.jm.reader.ui.components.ArchiveReveal
 import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
@@ -201,7 +202,11 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                     val downloaded = downloadedAlbums.any { it.albumId == detail.id }
 
                     LazyColumn(Modifier.fillMaxSize()) {
-                        item { DetailHeader(detail, repo) }
+                        item {
+                            ArchiveReveal(index = 0, generation = detail.id) {
+                                DetailHeader(detail, repo)
+                            }
+                        }
 
                         item {
                             Row(

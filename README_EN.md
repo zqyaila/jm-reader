@@ -47,6 +47,11 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
 - 🎨 **"Ink & ember" (optional)** — the previous look is still here: near-black canvas with a single
   ember accent, 12/16/24 dp surfaces and a warm glow. Switch it under "Me → Appearance"; archive is
   the default and the choice is remembered
+- 🎞️ **Motion** — the reference project's vocabulary: 120 ms press dip, 420 ms release with a
+  `cubic-bezier(.2,1.08,.34,1)` overshoot plus a light haptic; routes enter in 420 ms (a twelfth of
+  the width + fade) and leave in 320 ms (fade only); masthead, carousel and quick actions stagger in
+  at 45 ms intervals, capped at eight bands. All of it is `graphicsLayer` alpha + 8 dp of travel, so
+  it repaints without relayout
 - 🧭 **Back without losing your place** — home, the weekly chart, category lists and search keep
   their items and scroll position in a ViewModel owned by their `NavBackStackEntry`, so opening a
   comic and coming back leaves you exactly where you were instead of reloading page one

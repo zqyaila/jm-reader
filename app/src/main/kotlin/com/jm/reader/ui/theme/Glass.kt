@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -263,12 +265,15 @@ fun Modifier.glassClickable(
 ): Modifier {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val haptics = LocalHapticFeedback.current
+    // Down is a quick 120 ms dip; up is a 420 ms settle with a small overshoot, which is what
+    // reads as "jelly" rather than as a linear scale. Same numbers as Wenku8_Flutter.
     val progress by animateFloatAsState(
         targetValue = if (pressed && enabled) 1f else 0f,
-        animationSpec = GlassMotion.press,
+        animationSpec = if (pressed && enabled) ArchiveMotion.PressDown else ArchiveMotion.PressUp,
         label = "press",
     )
-    val scale = 1f - 0.014f * progress
+    val scale = 1f - 0.015f * progress
     return this
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .drawWithContent {
@@ -285,7 +290,10 @@ fun Modifier.glassClickable(
             interactionSource = interaction,
             indication = null,
             enabled = enabled,
-            onClick = onClick,
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onClick()
+            },
         )
 }
 
