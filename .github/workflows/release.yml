@@ -2,7 +2,7 @@ name: Release
 
 # One release per green build on master, tagged with the build's version:
 #
-#   https://github.com/<owner>/<repo>/releases/tag/v1.0.<run_number>
+#   https://github.com/<owner>/<repo>/releases/tag/v2.0.<run_number>
 #
 # Why this file exists: the build workflows only ever called `actions/upload-artifact`, which parks
 # files under a *run* (and expires them after 30 days). Nothing ever called the Releases API, so
@@ -80,7 +80,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="1.0.${GITHUB_RUN_NUMBER}"
+          version="2.0.${GITHUB_RUN_NUMBER}"
           tag="v${version}"
           notes=$(printf 'Build `%s` of `master`.\n\n| | |\n|---|---|\n| Version | `%s` |\n| Commit | `%s` |\n| Built | %s |\n| Event | `%s` |\n\nInstallers and the debug APK are attached below. The in-app updater reads\n`releases/latest`, so this build is offered to anyone who taps "check for updates".\n' \
             "$tag" "$version" "$GITHUB_SHA" "$(date -u '+%Y-%m-%d %H:%M UTC')" "$GITHUB_EVENT_NAME")
