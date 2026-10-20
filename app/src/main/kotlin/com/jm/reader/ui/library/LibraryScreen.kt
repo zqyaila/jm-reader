@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -65,7 +67,9 @@ import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
+import com.jm.reader.ui.components.BookshelfCarousel
 import com.jm.reader.ui.components.ComicGrid
+import com.jm.reader.ui.components.ShelfItem
 import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
@@ -101,6 +105,15 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
     val loggedIn by session.loggedInFlow.collectAsState()
     // Start on the first tab that actually works for the current login state.
     var tab by rememberSaveable { mutableIntStateOf(if (session.isLoggedIn) TAB_FAVORITES else TAB_HISTORY) }
+    // Shelf by default (it is the point of the tab), list for readers who want density. Persisted
+    // across launches: a display choice that resets every start is just a bug with extra steps.
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("jm_library", android.content.Context.MODE_PRIVATE) }
+    var shelf by remember { mutableStateOf(prefs.getBoolean("shelfMode", true)) }
+    fun setShelf(value: Boolean) {
+        shelf = value
+        prefs.edit().putBoolean("shelfMode", value).apply()
+    }
 
     Scaffold(
         modifier = modifier,
@@ -113,11 +126,23 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
         topBar = {
             GlassBar(Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth()) {
-                    Text(
-                        s.library,
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 0.dp),
-                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            s.library,
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { setShelf(!shelf) }) {
+                            Icon(
+                                if (shelf) Icons.Filled.ViewList else Icons.Filled.ViewModule,
+                                contentDescription = if (shelf) s.listView else s.shelfView,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     TabRow(
                         selectedTabIndex = tab,
                         containerColor = Color.Transparent,
@@ -142,9 +167,9 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 // Favorites are server-side and need an account; history and downloads are local.
-                0 -> if (loggedIn) FavoritesList(navController, repo, s) else LoginRequired(navController, s)
-                1 -> HistoryList(navController, repo, history, loggedIn, s)
-                else -> DownloadsList(navController, downloadManager, s, scope)
+                0 -> if (loggedIn) FavoritesList(navController, repo, s, shelf) else LoginRequired(navController, s)
+                1 -> HistoryList(navController, repo, history, loggedIn, s, shelf)
+                else -> DownloadsList(navController, downloadManager, s, scope, shelf, repo)
             }
         }
     }
@@ -189,6 +214,7 @@ private fun FavoritesList(
     navController: NavHostController,
     repo: AppRepository,
     s: AppStrings,
+    shelf: Boolean,
 ) {
     val vm: FavoritesViewModel = viewModel()
     var items by vm.items
@@ -216,6 +242,18 @@ private fun FavoritesList(
             // A real retry control: the only recovery used to be leaving and re-entering the tab.
             error != null -> ErrorView(error!!, onRetry = { reload++ }, modifier = Modifier.fillMaxSize())
             items.isEmpty() -> EmptyView(s.emptyFavorites, Modifier.fillMaxSize())
+            shelf -> BookshelfCarousel(
+                items = items.map {
+                    ShelfItem(
+                        id = it.id,
+                        title = it.name,
+                        subtitle = it.author.orEmpty(),
+                        cover = it.image.ifBlank { repo.comicCover(it.id, it.updateAt) },
+                    )
+                },
+                onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
+                modifier = Modifier.fillMaxSize(),
+            )
             else -> ComicGrid(
                 items = items,
                 repo = repo,
@@ -264,6 +302,7 @@ private fun HistoryList(
     history: HistoryManager,
     loggedIn: Boolean,
     s: AppStrings,
+    shelf: Boolean,
 ) {
     val vm: HistoryViewModel = viewModel()
     var source by vm.source
@@ -286,7 +325,7 @@ private fun HistoryList(
         }
         Box(Modifier.fillMaxSize()) {
             if (source == HISTORY_LOCAL) {
-                LocalHistory(navController, repo, history, s)
+                LocalHistory(navController, repo, history, s, shelf)
             } else {
                 CloudHistory(navController, repo, loggedIn, s)
             }
@@ -301,6 +340,7 @@ private fun LocalHistory(
     repo: AppRepository,
     history: HistoryManager,
     s: AppStrings,
+    shelf: Boolean,
 ) {
     val entries by history.entries.collectAsState()
     var confirmClear by remember { mutableStateOf(false) }
@@ -333,6 +373,25 @@ private fun LocalHistory(
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = { confirmClear = true }) { Text(s.historyClear) }
+                }
+                if (shelf) {
+                    BookshelfCarousel(
+                        items = entries.map { entry ->
+                            ShelfItem(
+                                id = entry.albumId,
+                                title = entry.name,
+                                subtitle = entry.episodeName ?: entry.author.orEmpty(),
+                                cover = repo.comicCover(entry.albumId, entry.updateAt),
+                                // History knows the page, not the size; a capped bar still tells
+                                // "started" from "finished the sample".
+                                progress = ((entry.pageIndex % 20) / 20f + 0.05f).coerceIn(0f, 1f)
+                                    .takeIf { entry.hasProgress },
+                            )
+                        },
+                        onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    return@Column
                 }
                 LazyColumn(
                     Modifier.fillMaxSize(),
@@ -609,6 +668,8 @@ private fun DownloadsList(
     downloadManager: DownloadManager,
     s: AppStrings,
     scope: CoroutineScope,
+    shelf: Boolean,
+    repo: AppRepository,
 ) {
     val albums by downloadManager.albums.collectAsState()
     val downloading by downloadManager.downloading.collectAsState()
@@ -617,6 +678,19 @@ private fun DownloadsList(
     Box(Modifier.fillMaxSize()) {
         if (albums.isEmpty()) {
             EmptyView(s.emptyDownloads, Modifier.fillMaxSize())
+        } else if (shelf) {
+            BookshelfCarousel(
+                items = albums.sortedByDescending { it.timestamp }.map { album ->
+                    ShelfItem(
+                        id = album.albumId,
+                        title = album.name,
+                        subtitle = "${album.chapterCount} 话 · ${album.pageCount} 页",
+                        cover = repo.comicCover(album.albumId, album.timestamp),
+                    )
+                },
+                onOpen = { navController.navigate(Routes.offlineReader(it.id)) },
+                modifier = Modifier.fillMaxSize(),
+            )
         } else {
             LazyColumn(
                 Modifier.fillMaxSize(),

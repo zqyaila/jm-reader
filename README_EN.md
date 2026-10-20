@@ -47,6 +47,12 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
 - 🎨 **"Ink & ember" (optional)** — the previous look is still here: near-black canvas with a single
   ember accent, 12/16/24 dp surfaces and a warm glow. Switch it under "Me → Appearance"; archive is
   the default and the choice is remembered
+- 📚 **Shelf view** — the library browses two ways, toggled at the right of the title and remembered:
+  the **3D shelf** stands favourites / history / downloads on a rail - looping carousel, inertial
+  scroll, one-book snap and a haptic tick when it settles; neighbours rotate and scale by distance
+  so they read as books on a shelf rather than a flat filmstrip. **List view** keeps the original
+  grid and rows for scanning. Progress bars come from real data (downloads = pages, history = last
+  position)
 - 🎞️ **Motion** — the reference project's vocabulary: 120 ms press dip, 420 ms release with a
   `cubic-bezier(.2,1.08,.34,1)` overshoot plus a light haptic; routes enter in 420 ms (a twelfth of
   the width + fade) and leave in 320 ms (fade only); masthead, carousel and quick actions stagger in
