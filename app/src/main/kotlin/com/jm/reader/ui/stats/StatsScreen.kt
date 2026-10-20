@@ -218,9 +218,9 @@ private fun NumberCard(
 ) {
     Column(
         modifier
-            .clip(RoundedCornerShape(16.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
             .padding(horizontal = 14.dp, vertical = 14.dp),
     ) {
         Text(

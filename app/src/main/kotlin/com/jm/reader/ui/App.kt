@@ -43,12 +43,30 @@ import com.jm.reader.ui.lines.LinesScreen
 import com.jm.reader.ui.splash.SplashScreen
 import com.jm.reader.ui.stats.StatsScreen
 import com.jm.reader.ui.theme.AppBackdrop
+import com.jm.reader.ui.theme.AppTheme
+import com.jm.reader.ui.theme.JMReaderTheme
+import com.jm.reader.ui.theme.LocalAppTheme
 import com.jm.reader.ui.week.WeekScreen
 
 @Composable
 fun JMRoot(app: JMApplication) {
     val language by app.languageManager.language.collectAsState()
+    val theme by app.themeManager.theme.collectAsState()
     val strings = remember(language) { AppStrings.forLanguage(language) }
+    // The theme wraps everything, so switching it re-shapes and re-colours the whole tree without
+    // recreating the nav graph (the reader stays on the page it was on).
+    JMReaderTheme(theme = theme) {
+        AppContent(app, language, strings, theme)
+    }
+}
+
+@Composable
+private fun AppContent(
+    app: JMApplication,
+    language: com.jm.reader.ui.strings.UiLanguage,
+    strings: AppStrings,
+    theme: AppTheme,
+) {
     CompositionLocalProvider(
         LocalRepository provides app.repository,
         LocalSession provides app.session,
@@ -59,6 +77,8 @@ fun JMRoot(app: JMApplication) {
         LocalStats provides app.statsManager,
         LocalUpdateManager provides app.updateManager,
         LocalHostManager provides app.hostManager,
+        LocalThemeManager provides app.themeManager,
+        LocalAppTheme provides theme,
         LocalAppStrings provides strings,
     ) {
         val navController = rememberNavController()

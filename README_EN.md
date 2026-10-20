@@ -37,15 +37,16 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
 - 🛡️ **Crash report on next launch** — if the app crashes, the stack trace is saved and shown
   on the next launch with a one-tap **copy log** button
 - 👤 **Member features** — login / register, favorites, viewing history, daily check-in, profile
-- 🎨 **UI ("ink & ember")** — ink-coloured canvas with a single ember accent, so **cover art is the
-  only saturated thing on screen**. Cards, rows and forms are solid surfaces with a 1 dp hairline
-  instead of stacked frosted panes; glass survives only in the floating bottom bar (the page is
-  recorded into a layer and the bar genuinely samples and blurs what is behind it). Home is a large
-  hero carousel + recently-read strip + 3-column cover grid, the weekly chart numbers its covers,
-  and the detail page has one header (blurred cover wash + poster + title). Every surface presses
-  with a damped spring instead of a ripple. Light/dark, glass effective on API 31+, degrading to an
-  opaque haze below that. The top bar keeps Material's default height on purpose: `TopAppBar`
-  measures its own status-bar inset, so forcing 56 dp clips the title under the system bar
+- 🗂️ **UI ("reading archive", default)** — rebuilt around the archive vocabulary of
+  [Wenku8_Flutter](https://github.com/mikufoxxx/Wenku8_Flutter): warm paper `#F4F3EF` and plain ink
+  `#181818`, **no accent colour at all**, so cover art is the only saturated thing on screen.
+  3 dp covers / 4 dp panels, 1 px hairlines, 9 sp monospace file codes (`JM-123456`), and a solid
+  ink masthead block with a 4 dp section square - a printed catalogue rather than a feed. Glass
+  survives only in the floating dock; the canvas is paper with a 48 dp registration grid. The dark
+  theme is neutral graphite
+- 🎨 **"Ink & ember" (optional)** — the previous look is still here: near-black canvas with a single
+  ember accent, 12/16/24 dp surfaces and a warm glow. Switch it under "Me → Appearance"; archive is
+  the default and the choice is remembered
 - 🧭 **Back without losing your place** — home, the weekly chart, category lists and search keep
   their items and scroll position in a ViewModel owned by their `NavBackStackEntry`, so opening a
   comic and coming back leaves you exactly where you were instead of reloading page one

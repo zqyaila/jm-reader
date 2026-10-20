@@ -385,7 +385,7 @@ private fun ChapterListDialog(
 ) {
     val s = LocalAppStrings.current
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
+        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(s.chooseChapter, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(12.dp))
                 if (chapters.isEmpty()) {

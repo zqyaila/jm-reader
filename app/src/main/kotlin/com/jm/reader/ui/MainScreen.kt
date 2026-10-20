@@ -50,7 +50,9 @@ import com.jm.reader.ui.home.HomeScreen
 import com.jm.reader.ui.library.LibraryScreen
 import com.jm.reader.ui.member.MemberScreen
 import com.jm.reader.ui.theme.AppMotion
+import com.jm.reader.ui.theme.AppTheme
 import com.jm.reader.ui.theme.GlassBar
+import com.jm.reader.ui.theme.LocalAppTheme
 import com.jm.reader.ui.theme.GlassCapsule
 import com.jm.reader.ui.theme.GlassKind
 import com.jm.reader.ui.theme.GlassSizes
@@ -123,6 +125,11 @@ private fun GlassBottomNav(
     val s = LocalAppStrings.current
     val accent = MaterialTheme.colorScheme.primary
     val idle = MaterialTheme.colorScheme.onSurfaceVariant
+    // Archive marks the active tab with a solid ink block (the masthead's brand block inverted);
+    // ember keeps the softer 14 % wash it was tuned with.
+    val archive = LocalAppTheme.current == AppTheme.ARCHIVE
+    val indicator = if (archive) accent else accent.copy(alpha = 0.14f)
+    val activeTint = if (archive) MaterialTheme.colorScheme.onPrimary else accent
     val items = listOf(
         s.home to Icons.Filled.Home,
         s.categories to Icons.Filled.Category,
@@ -157,8 +164,8 @@ private fun GlassBottomNav(
                     .width(itemWidth)
                     .height(GlassSizes.BottomTabHeight)
                     .padding(horizontal = 6.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(accent.copy(alpha = 0.14f)),
+                    .clip(MaterialTheme.shapes.small)
+                    .background(indicator),
             )
 
             Row(
@@ -167,12 +174,12 @@ private fun GlassBottomNav(
             ) {
                 items.forEachIndexed { index, (label, icon) ->
                     val active = index == selected
-                    val tint = if (active) accent else idle
+                    val tint = if (active) activeTint else idle
                     Column(
                         Modifier
                             .width(itemWidth)
                             .height(GlassSizes.BottomTabHeight)
-                            .glassClickable(shape = RoundedCornerShape(16.dp), onClick = { onSelect(index) }),
+                            .glassClickable(shape = MaterialTheme.shapes.small, onClick = { onSelect(index) }),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {

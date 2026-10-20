@@ -28,7 +28,6 @@ import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.nav.Routes
-import com.jm.reader.ui.theme.BrandOrange
 import kotlinx.coroutines.launch
 
 private sealed class BootState {
@@ -85,7 +84,7 @@ fun SplashScreen(navController: NavHostController) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(strs.appName, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                 CircularProgressIndicator(
-                    color = BrandOrange,
+                    color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .size(32.dp)
                         .background(MaterialTheme.colorScheme.background),

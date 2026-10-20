@@ -166,15 +166,18 @@ class GlassContrastTest {
     }
 
     @Test
-    fun `navigation accents keep AA on their solid pill`() {
-        assertTrue(
-            "dark selected nav (on #121212): ${ratio(BrandOrangeSoft, DarkBg)}",
-            ratio(BrandOrangeSoft, DarkBg) >= 4.5,
-        )
-        assertTrue(
-            "light selected nav (on white): ${ratio(BrandOrangeDeep, Color.White)}",
-            ratio(BrandOrangeDeep, Color.White) >= 4.5,
-        )
+    fun `navigation pill keeps AA in both themes`() {
+        // Archive marks the active tab with a solid ink (or off-white) block, so the label on top
+        // must clear AA against `primary`, not against a tint of it.
+        for (scheme in listOf(ArchiveDarkColors, ArchiveLightColors, EmberDarkColors, EmberLightColors)) {
+            assertTrue(
+                "selected nav label: ${ratio(scheme.primary, scheme.onPrimary)}",
+                ratio(scheme.primary, scheme.onPrimary) >= 4.5,
+            )
+        }
+        // The ember wash is only 14 % opaque, so its label sits almost directly on the bar fog.
+        assertTrue(ratio(EmberLightColors.primary, PaperMilk) >= 4.5)
+        assertTrue(ratio(EmberDarkColors.primary, DarkSurface) >= 4.5)
     }
 
     /**

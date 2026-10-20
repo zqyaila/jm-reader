@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -133,7 +134,7 @@ fun ErrorView(
             Button(
                 onClick = onRetry,
                 modifier = Modifier.padding(top = AppSpacing.ScreenEdge),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Text(s.retry)
             }
@@ -166,27 +167,44 @@ fun SectionHeader(
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
+    // Archive section mark: a 4 dp ink square, the title, then a hairline that runs to the action.
+    // No card, no background - the rule is what separates sections, exactly like a printed page.
     Row(
-        modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            Modifier
+                .size(4.dp)
+                .background(MaterialTheme.colorScheme.onBackground),
+        )
         Text(
             text = title,
-            fontSize = 19.sp,
+            fontSize = 18.sp,
+            lineHeight = 22.sp,
             fontWeight = FontWeight.ExtraBold,
-            letterSpacing = (-0.2).sp,
+            letterSpacing = (-0.4).sp,
             color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.padding(start = 8.dp),
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .padding(start = 10.dp)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant),
         )
         if (actionLabel != null && onAction != null) {
             Text(
                 text = actionLabel,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                    .padding(start = 10.dp)
+                    .clip(RoundedCornerShape(2.dp))
                     .clickable(onClick = onAction)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                    .padding(horizontal = 4.dp, vertical = 3.dp),
             )
         }
     }

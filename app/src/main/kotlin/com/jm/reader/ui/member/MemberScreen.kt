@@ -51,7 +51,9 @@ import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalLanguageManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
+import com.jm.reader.ui.LocalThemeManager
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.theme.AppTheme
 import com.jm.reader.ui.update.UpdateDialog
 import com.jm.reader.ui.strings.UiLanguage
 import com.jm.reader.ui.theme.AdFreeAccent
@@ -115,6 +117,28 @@ fun MemberScreen(navController: NavHostController, modifier: Modifier = Modifier
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 16.dp, top = 20.dp),
         )
+
+        // Appearance: switching re-colours and re-shapes the whole tree immediately.
+        val themeManager = LocalThemeManager.current
+        val theme by themeManager.theme.collectAsState()
+        Text(
+            s.themeTitle,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(16.dp, 20.dp, 16.dp, 8.dp),
+        )
+        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = theme == AppTheme.ARCHIVE,
+                onClick = { themeManager.set(AppTheme.ARCHIVE) },
+                label = { Text(s.themeArchive) },
+            )
+            FilterChip(
+                selected = theme == AppTheme.EMBER,
+                onClick = { themeManager.set(AppTheme.EMBER) },
+                label = { Text(s.themeEmber) },
+            )
+        }
 
         // Language switcher
         Text(s.language, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(16.dp, 20.dp, 16.dp, 8.dp))

@@ -135,13 +135,15 @@ class AppThemeTokensTest {
     }
 
     @Test
-    fun `headlines and titles are SemiBold, body is Regular`() {
+    fun `headlines are ExtraBold and titles are Bold, body is Regular`() {
         // This is the actual hierarchy fix vs. Material's stock scale (all-Regular headlines).
-        assertEquals(FontWeight.SemiBold, AppTypography.headlineLarge.fontWeight)
-        assertEquals(FontWeight.SemiBold, AppTypography.headlineMedium.fontWeight)
-        assertEquals(FontWeight.SemiBold, AppTypography.headlineSmall.fontWeight)
-        assertEquals(FontWeight.SemiBold, AppTypography.titleLarge.fontWeight)
-        assertEquals(FontWeight.SemiBold, AppTypography.titleMedium.fontWeight)
+        // Archive vocabulary: headings are heavy and tightly tracked, so a long title still reads
+        // as a heading rather than as body text.
+        assertEquals(FontWeight.ExtraBold, AppTypography.headlineLarge.fontWeight)
+        assertEquals(FontWeight.ExtraBold, AppTypography.headlineMedium.fontWeight)
+        assertEquals(FontWeight.ExtraBold, AppTypography.headlineSmall.fontWeight)
+        assertEquals(FontWeight.Bold, AppTypography.titleLarge.fontWeight)
+        assertEquals(FontWeight.Bold, AppTypography.titleMedium.fontWeight)
         assertEquals(FontWeight.Normal, AppTypography.bodyLarge.fontWeight)
         assertEquals(FontWeight.Normal, AppTypography.bodyMedium.fontWeight)
     }
@@ -180,8 +182,8 @@ class AppThemeTokensTest {
     @Test
     fun `the top bar title style is the one the app actually renders`() {
         // AppTopBar hardcodes `titleLarge`; pin the numbers so a change there shows up here.
-        assertEquals(22.sp, AppTypography.titleLarge.fontSize)
-        assertEquals(28.sp, AppTypography.titleLarge.lineHeight)
+        assertEquals(21.sp, AppTypography.titleLarge.fontSize)
+        assertEquals(27.sp, AppTypography.titleLarge.lineHeight)
     }
 
     @Test
@@ -197,22 +199,23 @@ class AppThemeTokensTest {
     // -----------------------------------------------------------------------
 
     @Test
-    fun `the shape scale is anchored to the liquid-glass radii`() {
-        // If these drift, a card nested in a card stops lining up with its own inner chip.
-        assertEquals(CornerSize(GlassSizes.RadiusInner), AppShapes.small.topStart)
-        assertEquals(CornerSize(GlassSizes.RadiusStandard), AppShapes.medium.topStart)
-        assertEquals(CornerSize(GlassSizes.RadiusHeavy), AppShapes.large.topStart)
+    fun `archive shapes are catalogue corners`() {
+        // Archive: near-square covers (3 dp) and 4 dp panels, exactly like a printed card index.
+        assertEquals(CornerSize(2.dp), ArchiveShapes.extraSmall.topStart)
+        assertEquals(CornerSize(3.dp), ArchiveShapes.small.topStart)
+        assertEquals(CornerSize(4.dp), ArchiveShapes.medium.topStart)
+        assertEquals(CornerSize(6.dp), ArchiveShapes.large.topStart)
+        assertEquals(CornerSize(10.dp), ArchiveShapes.extraLarge.topStart)
     }
 
     @Test
-    fun `the shape scale is monotonically rounder`() {
-        // Values pinned explicitly, which is stronger than mere monotonicity: the Expressive ladder
-        // for a rounded app is 8 / 12 / 16 / 24 / 32.
-        assertEquals(CornerSize(8.dp), AppShapes.extraSmall.topStart)
-        assertEquals(CornerSize(12.dp), AppShapes.small.topStart)
-        assertEquals(CornerSize(16.dp), AppShapes.medium.topStart)
-        assertEquals(CornerSize(24.dp), AppShapes.large.topStart)
-        assertEquals(CornerSize(32.dp), AppShapes.extraLarge.topStart)
+    fun `ember shapes keep the previous rounded scale`() {
+        // The old look is still selectable, so its ladder must not silently follow archive.
+        assertEquals(CornerSize(8.dp), EmberShapes.extraSmall.topStart)
+        assertEquals(CornerSize(12.dp), EmberShapes.small.topStart)
+        assertEquals(CornerSize(16.dp), EmberShapes.medium.topStart)
+        assertEquals(CornerSize(24.dp), EmberShapes.large.topStart)
+        assertEquals(CornerSize(32.dp), EmberShapes.extraLarge.topStart)
     }
 
     @Test

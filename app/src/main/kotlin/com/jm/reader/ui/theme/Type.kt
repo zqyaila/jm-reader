@@ -62,39 +62,39 @@ val AppTypography = Typography(
     ),
     headlineLarge = TextStyle(
         fontFamily = AppFontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 32.sp,
-        lineHeight = 40.sp,
-        letterSpacing = (-0.25f).sp,
+        lineHeight = 38.sp,
+        letterSpacing = (-0.8f).sp,
     ),
     headlineMedium = TextStyle(
         fontFamily = AppFontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 28.sp,
-        lineHeight = 36.sp,
-        letterSpacing = (-0.2f).sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.7f).sp,
     ),
     headlineSmall = TextStyle(
         fontFamily = AppFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 24.sp,
-        lineHeight = 32.sp,
-        letterSpacing = 0.sp,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 23.sp,
+        lineHeight = 30.sp,
+        letterSpacing = (-0.7f).sp,
     ),
     // A top-bar title is `titleLarge`; SemiBold here is what separates it from body text.
     titleLarge = TextStyle(
         fontFamily = AppFontFamily,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        letterSpacing = 0.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 21.sp,
+        lineHeight = 27.sp,
+        letterSpacing = (-0.4f).sp,
     ),
     titleMedium = TextStyle(
         fontFamily = AppFontFamily,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
         fontSize = 16.sp,
-        lineHeight = 24.sp,
-        letterSpacing = 0.15f.sp,
+        lineHeight = 22.sp,
+        letterSpacing = (-0.1f).sp,
     ),
     titleSmall = TextStyle(
         fontFamily = AppFontFamily,
@@ -108,14 +108,14 @@ val AppTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.5f.sp,
+        letterSpacing = 0.2f.sp,
     ),
     bodyMedium = TextStyle(
         fontFamily = AppFontFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.25f.sp,
+        letterSpacing = 0.15f.sp,
     ),
     bodySmall = TextStyle(
         fontFamily = AppFontFamily,
@@ -145,4 +145,18 @@ val AppTypography = Typography(
         lineHeight = 16.sp,
         letterSpacing = 0.5f.sp,
     ),
+)
+
+/**
+ * The archive's small monospace "file code" (`WK-00012` / `JM-123456`).
+ *
+ * 9 sp with 1.05 tracking is deliberately tiny: it is a catalogue mark, not metadata to read. Used
+ * above titles and under the masthead, where it gives the layout its printed-register character.
+ */
+val CodeTextStyle = TextStyle(
+    fontFamily = FontFamily.Monospace,
+    fontWeight = FontWeight.Medium,
+    fontSize = 9.sp,
+    lineHeight = 12.sp,
+    letterSpacing = 1.05.sp,
 )

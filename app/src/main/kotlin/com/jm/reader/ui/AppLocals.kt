@@ -11,6 +11,7 @@ import com.jm.reader.data.stats.ReadingStatsManager
 import com.jm.reader.data.update.UpdateManager
 import com.jm.reader.ui.strings.AppStrings
 import com.jm.reader.ui.strings.LanguageManager
+import com.jm.reader.ui.theme.ThemeManager
 
 val LocalRepository = staticCompositionLocalOf<AppRepository> {
     error("LocalRepository not provided")
@@ -43,6 +44,11 @@ val LocalSearchHistoryManager = staticCompositionLocalOf<SearchHistoryManager> {
 /** On-device reading statistics (tags, time, distinct works). */
 val LocalStats = staticCompositionLocalOf<ReadingStatsManager> {
     error("LocalStats not provided")
+}
+
+/** Persisted look (archive / ember). */
+val LocalThemeManager = staticCompositionLocalOf<ThemeManager> {
+    error("LocalThemeManager not provided")
 }
 
 /** API host probing/selection, used by the lines screen. */

@@ -59,7 +59,7 @@ fun ComicCard(
     /** 0f..1f reading progress; when set, a hairline bar is drawn at the bottom of the cover. */
     progress: Float? = null,
 ) {
-    val coverShape = RoundedCornerShape(12.dp)
+    val coverShape = RoundedCornerShape(3.dp)
     Column(
         modifier = modifier.glassClickable(onClick = onClick, shape = coverShape),
     ) {
@@ -80,20 +80,6 @@ fun ComicCard(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )
-            // A short bottom scrim keeps the JM number readable on light covers without tinting
-            // the whole image.
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(34.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f)),
-                        ),
-                    ),
-            )
-
             if (rank != null) {
                 Text(
                     text = rank.toString().padStart(2, '0'),
@@ -104,28 +90,12 @@ fun ComicCard(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .padding(6.dp)
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(RoundedCornerShape(2.dp))
                         .background(
                             if (rank <= 3) MaterialTheme.colorScheme.primary
                             else Color.Black.copy(alpha = 0.55f),
                         )
                         .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-            }
-
-            JmId.display(item.id).takeIf { it.isNotEmpty() }?.let { label ->
-                Text(
-                    text = label,
-                    color = Color.White.copy(alpha = 0.78f),
-                    fontSize = 8.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(5.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(Color.Black.copy(alpha = 0.38f))
-                        .padding(horizontal = 4.dp, vertical = 1.dp),
-                    maxLines = 1,
                 )
             }
 
@@ -152,11 +122,22 @@ fun ComicCard(
                 text = item.name,
                 fontSize = 12.5.sp,
                 lineHeight = 17.sp,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            // The catalogue mark sits under the title, not on the artwork: a badge on a 110 dp
+            // cover competes with the image, while a mono line below reads as a record entry.
+            JmId.display(item.id).takeIf { it.isNotEmpty() }?.let { label ->
+                Text(
+                    text = label,
+                    style = com.jm.reader.ui.theme.CodeTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 3.dp),
+                    maxLines = 1,
+                )
+            }
             if (showAuthor) {
                 item.author?.takeIf { it.isNotBlank() }?.let { author ->
                     Row(

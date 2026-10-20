@@ -219,7 +219,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                         }
                                     },
                                     modifier = Modifier.weight(1f).height(46.dp),
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     contentPadding = PaddingValues(horizontal = 16.dp),
                                 ) {
                                     Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -392,7 +392,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                     Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 20.dp, vertical = 4.dp)
-                                        .clip(RoundedCornerShape(12.dp))
+                                        .clip(MaterialTheme.shapes.small)
                                         .background(MaterialTheme.colorScheme.surfaceVariant)
                                         .padding(14.dp),
                                 ) {
@@ -638,8 +638,8 @@ private fun DetailHeader(detail: ComicDetail, repo: AppRepository) {
                 modifier = Modifier
                     .width(104.dp)
                     .aspectRatio(3f / 4f)
-                    .clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(12.dp)),
+                    .clip(MaterialTheme.shapes.small)
+                    .border(1.dp, Color.White.copy(alpha = 0.16f), MaterialTheme.shapes.small),
             )
             Column(Modifier.padding(start = 14.dp, bottom = 4.dp)) {
                 Text(
@@ -719,7 +719,7 @@ private fun ActionIcon(onClick: () -> Unit, label: String, icon: @Composable () 
         Box(
             Modifier
                 .size(46.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .clip(MaterialTheme.shapes.small)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,

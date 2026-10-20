@@ -86,7 +86,16 @@ fun Modifier.platformBlur(radius: Dp, unbounded: Boolean = true): Modifier =
 // ---------------------------------------------------------------------------
 
 @Composable
-fun backdropBrush(): Brush = if (isSystemInDarkTheme()) BackdropBrush else BackdropBrushLight
+fun backdropBrush(): Brush {
+    val archive = LocalAppTheme.current == AppTheme.ARCHIVE
+    val dark = isSystemInDarkTheme()
+    return when {
+        archive && dark -> ArchiveBackdropDark
+        archive -> ArchiveBackdropLight
+        dark -> EmberBackdropDark
+        else -> EmberBackdropLight
+    }
+}
 
 /** Which kind of glass surface, i.e. how dense its fog has to be for legibility. */
 enum class GlassKind {
@@ -103,7 +112,15 @@ enum class GlassKind {
 @Composable
 fun glassFogColor(kind: GlassKind = GlassKind.Panel): Color {
     val dark = isSystemInDarkTheme()
-    val base = if (dark) GlassFogDark else GlassFogLight
+    // Archive fogs with its own paper/graphite surface, so the dock reads as a pane of the page;
+    // ember keeps the near-white / near-black fog it was tuned against.
+    val base = if (LocalAppTheme.current == AppTheme.ARCHIVE) {
+        MaterialTheme.colorScheme.surface
+    } else if (dark) {
+        Color(0xFF121215)
+    } else {
+        Color(0xFFFBFAF7)
+    }
     val alpha = when (kind) {
         GlassKind.Panel -> if (dark) GlassPanelFogAlphaDark else GlassPanelFogAlphaLight
         GlassKind.TopBar -> if (dark) GlassTopBarFogAlphaDark else GlassTopBarFogAlphaLight
@@ -321,27 +338,44 @@ fun GlassBar(
 /**
  * Full-screen app background.
  *
- * Quiet by design: one vertical ink gradient plus a single warm glow in the top corner, at ~10%
- * opacity. No coloured blobs, no blurred circles - the covers supply all the colour on screen.
+ * Archive: flat paper with a 48 dp registration grid at 4.5 % ink - the printed-catalogue cue from
+ * Wenku8_Flutter, and quiet enough that it never competes with a cover.
+ * Ember: the previous vertical ink gradient plus one warm glow in the top corner.
  */
 @Composable
 fun AppBackdrop(modifier: Modifier = Modifier) {
     val dark = isSystemInDarkTheme()
+    val archive = LocalAppTheme.current == AppTheme.ARCHIVE
     Box(
         modifier
             .fillMaxSize()
             .background(backdropBrush())
             .drawBehind {
-                drawRect(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            BrandOrange.copy(alpha = if (dark) 0.10f else 0.07f),
-                            Color.Transparent,
+                if (archive) {
+                    val grid = if (dark) Color.White.copy(alpha = 0.035f) else Color(0xFF181818).copy(alpha = 0.045f)
+                    val step = 48.dp.toPx()
+                    var x = 24.dp.toPx()
+                    while (x < size.width) {
+                        drawLine(grid, Offset(x, 0f), Offset(x, size.height), 0.5.dp.toPx())
+                        x += step
+                    }
+                    var y = 24.dp.toPx()
+                    while (y < size.height) {
+                        drawLine(grid, Offset(0f, y), Offset(size.width, y), 0.5.dp.toPx())
+                        y += step
+                    }
+                } else {
+                    drawRect(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                EmberAccentDark.copy(alpha = if (dark) 0.10f else 0.07f),
+                                Color.Transparent,
+                            ),
+                            center = Offset(size.width * 0.82f, size.height * 0.02f),
+                            radius = size.width * 1.05f,
                         ),
-                        center = Offset(size.width * 0.82f, size.height * 0.02f),
-                        radius = size.width * 1.05f,
-                    ),
-                )
+                    )
+                }
             },
     )
 }

@@ -338,7 +338,9 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     HomeHeader(
                         title = s.homeGreeting,
-                        eyebrow = s.appName.uppercase(),
+                        // A catalogue code, not a wordmark: the masthead's second line is the
+                        // archive address, in the same mono style as every cover's JM number.
+                        eyebrow = "JM-READER / 18COMIC",
                         onSearch = { navController.navigate(Routes.search()) },
                         onRefresh = { scope.launch { loadInitial() } },
                     )
@@ -440,9 +442,9 @@ private fun SurpriseEntry(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
             .clickable(enabled = !loading, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -506,34 +508,49 @@ private fun HomeHeader(
     onSearch: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    // Masthead in the archive vocabulary: a solid ink "JM" block, the greeting, and the catalogue
+    // code under it. The brand block is the only filled shape in the header - it is what makes the
+    // page read as a register rather than as a feed.
     Row(
-        Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp),
+        Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) {
+        Box(
+            Modifier
+                .size(width = 30.dp, height = 34.dp)
+                .background(MaterialTheme.colorScheme.onBackground),
+            contentAlignment = Alignment.Center,
+        ) {
             Text(
-                text = eyebrow,
-                fontSize = 10.sp,
-                letterSpacing = 2.2.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
+                "JM",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.7).sp,
+                color = MaterialTheme.colorScheme.background,
             )
+        }
+        Column(Modifier.weight(1f).padding(start = 10.dp)) {
             Text(
                 text = title,
-                fontSize = 29.sp,
-                lineHeight = 34.sp,
+                fontSize = 23.sp,
+                lineHeight = 27.sp,
                 fontWeight = FontWeight.ExtraBold,
-                letterSpacing = (-0.6).sp,
+                letterSpacing = (-0.7).sp,
                 color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = eyebrow,
+                style = com.jm.reader.ui.theme.CodeTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 3.dp),
+                maxLines = 1,
             )
         }
         IconButton(
             onClick = onRefresh,
-            modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(50))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(3.dp)),
         ) {
             Icon(
                 Icons.Filled.Refresh,
@@ -542,13 +559,9 @@ private fun HomeHeader(
                 modifier = Modifier.size(18.dp),
             )
         }
-        Spacer(Modifier.width(8.dp))
         IconButton(
             onClick = onSearch,
-            modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(50))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(3.dp)),
         ) {
             Icon(
                 Icons.Filled.Search,
@@ -592,8 +605,8 @@ private fun HeroCarousel(
                 Modifier
                     .fillMaxWidth()
                     .aspectRatio(0.86f)
-                    .clip(RoundedCornerShape(24.dp))
-                    .glassClickable(shape = RoundedCornerShape(24.dp)) { onItemClick(item) },
+                    .clip(MaterialTheme.shapes.large)
+                    .glassClickable(shape = MaterialTheme.shapes.large) { onItemClick(item) },
             ) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current).data(cover).crossfade(true).build(),
@@ -660,7 +673,7 @@ private fun HeroCarousel(
                             .padding(top = 14.dp)
                             .fillMaxWidth()
                             .height(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(MaterialTheme.colorScheme.primary)
                             .clickable { onItemClick(item) },
                         horizontalArrangement = Arrangement.Center,
@@ -733,9 +746,9 @@ private fun QuickLinks(navController: NavHostController) {
                 Column(
                     Modifier
                         .weight(1f)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
                         .clickable(onClick = onClick)
                         .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -808,14 +821,14 @@ private fun RecentRow(
             Column(
                 Modifier
                     .width(112.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .glassClickable(shape = RoundedCornerShape(12.dp)) { onClick(entry) },
+                    .clip(MaterialTheme.shapes.small)
+                    .glassClickable(shape = MaterialTheme.shapes.small) { onClick(entry) },
             ) {
                 Box(
                     Modifier
                         .fillMaxWidth()
                         .aspectRatio(3f / 4f)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(MaterialTheme.shapes.small)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     AsyncImage(

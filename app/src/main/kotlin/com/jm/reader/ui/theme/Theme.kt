@@ -5,58 +5,61 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Shapes
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 
 /**
  * Colour schemes.
  *
- * Both schemes are *opaque* now. Translucency is reserved for the one floating bar; a page canvas
- * that let a coloured gradient show through every card was the reason the old build looked busy.
+ * Both are monochrome on purpose. `primary` is ink in the light theme and off-white in the dark
+ * one, so a filled button, an active tab and a section rule all use the same "printed" colour - the
+ * archive vocabulary has no accent hue, and adding one immediately makes the cover art compete with
+ * the chrome.
  *
- * Primary is theme-dependent on purpose: ember `#FF8A4C` is legible on ink but only ~2.4:1 on
- * paper, so the light scheme uses `#C2410C` for anything drawn as text or an icon. Filled buttons
- * therefore read correctly in both themes without a second "button colour" token.
+ * Surfaces are opaque: only the floating dock is glass, and it samples the page underneath.
  */
-internal val DarkColors = darkColorScheme(
-    primary = BrandOrange,
-    onPrimary = Color(0xFF1A0D06),
-    primaryContainer = Color(0xFF3A1D10),
-    onPrimaryContainer = BrandOrangeSoft,
-    secondary = BrandOrangeSoft,
-    onSecondary = Color(0xFF1A0D06),
-    secondaryContainer = Color(0xFF2A211C),
-    onSecondaryContainer = BrandOrangeSoft,
-    tertiary = BrandOrangeSoft,
-    onTertiary = Color(0xFF1A0D06),
+internal val ArchiveDarkColors = darkColorScheme(
+    primary = TextPrimaryDark,
+    onPrimary = DarkBg,
+    primaryContainer = DarkSurfaceVariant,
+    onPrimaryContainer = TextPrimaryDark,
+    secondary = TextSecondaryDark,
+    onSecondary = DarkBg,
+    secondaryContainer = DarkSurfaceVariant,
+    onSecondaryContainer = TextPrimaryDark,
+    tertiary = TextSecondaryDark,
+    onTertiary = DarkBg,
     background = DarkBg,
     onBackground = TextPrimaryDark,
     surface = DarkSurface,
     onSurface = TextPrimaryDark,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = TextSecondaryDark,
-    outline = DarkOutline,
+    outline = Color(0xFF7A7A7A),
     outlineVariant = HairlineDark,
-    error = Color(0xFFFF6B6B),
-    onError = Color(0xFF1A0D06),
+    error = Color(0xFFFF8A80),
+    onError = DarkBg,
 )
 
-internal val LightColors = lightColorScheme(
-    primary = BrandOrangeDeep,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFE3D2),
-    onPrimaryContainer = Color(0xFF5A1C00),
-    secondary = BrandOrangeDark,
-    onSecondary = Color.White,
-    secondaryContainer = Color(0xFFFFEBDD),
-    onSecondaryContainer = Color(0xFF5A1C00),
-    tertiary = BrandOrangeDark,
-    onTertiary = Color.White,
-    background = LightBg,
-    onBackground = TextPrimaryLight,
-    surface = LightSurface,
-    onSurface = TextPrimaryLight,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = TextSecondaryLight,
+internal val ArchiveLightColors = lightColorScheme(
+    primary = Ink,
+    onPrimary = PaperMilk,
+    primaryContainer = PaperRaised,
+    onPrimaryContainer = Ink,
+    secondary = InkMuted,
+    onSecondary = PaperMilk,
+    secondaryContainer = PaperRaised,
+    onSecondaryContainer = Ink,
+    tertiary = InkMuted,
+    onTertiary = PaperMilk,
+    background = PaperBg,
+    onBackground = Ink,
+    surface = PaperSurface,
+    onSurface = Ink,
+    surfaceVariant = PaperRaised,
+    onSurfaceVariant = InkMuted,
     outline = LightOutline,
     outlineVariant = HairlineLight,
     error = Color(0xFFB3261E),
@@ -65,15 +68,89 @@ internal val LightColors = lightColorScheme(
 
 @Composable
 fun JMReaderTheme(
+    theme: AppTheme = AppTheme.ARCHIVE,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
+    val archive = theme == AppTheme.ARCHIVE
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        // M3 Expressive hierarchy + shape scale, wired in exactly one place so every screen
-        // inherits it. See Type.kt / Shapes.kt for the per-token rationale.
+        colorScheme = when {
+            archive && darkTheme -> ArchiveDarkColors
+            archive -> ArchiveLightColors
+            darkTheme -> EmberDarkColors
+            else -> EmberLightColors
+        },
         typography = AppTypography,
-        shapes = AppShapes,
+        shapes = if (archive) ArchiveShapes else EmberShapes,
         content = content,
     )
 }
+
+/** Ember (the previous look): ink + a single ember accent, 12/16/24 dp surfaces. */
+internal val EmberDarkColors = darkColorScheme(
+    primary = EmberAccentDark,
+    onPrimary = Color(0xFF1A0D06),
+    primaryContainer = Color(0xFF3A1D10),
+    onPrimaryContainer = EmberAccentSoft,
+    secondary = EmberAccentSoft,
+    onSecondary = Color(0xFF1A0D06),
+    secondaryContainer = Color(0xFF2A211C),
+    onSecondaryContainer = EmberAccentSoft,
+    tertiary = EmberAccentSoft,
+    onTertiary = Color(0xFF1A0D06),
+    background = EmberBgDark,
+    onBackground = EmberTextDark,
+    surface = EmberSurfaceDark,
+    onSurface = EmberTextDark,
+    surfaceVariant = EmberRaisedDark,
+    onSurfaceVariant = EmberTextMutedDark,
+    outline = EmberOutlineDark,
+    outlineVariant = Color(0xFF2E2E35),
+    error = Color(0xFFFF6B6B),
+    onError = Color(0xFF1A0D06),
+)
+
+internal val EmberLightColors = lightColorScheme(
+    primary = EmberAccentDeep,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFFFE3D2),
+    onPrimaryContainer = Color(0xFF5A1C00),
+    secondary = Color(0xFFD9601F),
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFFFEBDD),
+    onSecondaryContainer = Color(0xFF5A1C00),
+    tertiary = Color(0xFFD9601F),
+    onTertiary = Color.White,
+    background = EmberBgLight,
+    onBackground = EmberTextLight,
+    surface = EmberSurfaceLight,
+    onSurface = EmberTextLight,
+    surfaceVariant = EmberRaisedLight,
+    onSurfaceVariant = EmberTextMutedLight,
+    outline = EmberOutlineLight,
+    outlineVariant = Color(0xFFE6E0D6),
+    error = Color(0xFFB3261E),
+    onError = Color.White,
+)
+
+/** Archive shape scale: catalogue corners, not pills. */
+internal val ArchiveShapes = Shapes(
+    extraSmall = RoundedCornerShape(2.dp),
+    small = RoundedCornerShape(3.dp),
+    medium = RoundedCornerShape(4.dp),
+    large = RoundedCornerShape(6.dp),
+    extraLarge = RoundedCornerShape(10.dp),
+)
+
+/** Ember shape scale: the previous, softer scale. */
+internal val EmberShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(32.dp),
+)
+
+// Short aliases used by the contrast tests: the archive schemes are the default pair.
+internal val DarkColors = ArchiveDarkColors
+internal val LightColors = ArchiveLightColors

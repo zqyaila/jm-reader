@@ -184,7 +184,7 @@ private fun LineRow(
     active: Boolean,
     onClick: () -> Unit,
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = MaterialTheme.shapes.small
     Row(
         Modifier
             .fillMaxWidth()

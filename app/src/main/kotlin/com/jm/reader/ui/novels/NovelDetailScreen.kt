@@ -178,7 +178,7 @@ fun NovelDetailScreen(navController: NavHostController, nid: String) {
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = 520.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(MaterialTheme.shapes.small)
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(16.dp),
             ) {

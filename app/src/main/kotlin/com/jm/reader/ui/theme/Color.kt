@@ -4,64 +4,78 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // ---------------------------------------------------------------------------
-// Palette: "ink & ember".
+// Two palettes.
 //
-// The previous palette was built around a violet/blue/teal blob backdrop with frosted glass on
-// every surface. Over full-bleed cover art that reads as noise: dozens of tinted panels, coloured
-// halos and diagonal sheens competing with the artwork. This palette removes the colour from the
-// chrome and leaves exactly one accent - ember orange - so covers are the only saturated thing on
-// screen.
+// ARCHIVE (default) - modelled on the Wenku8_Flutter reading archive: warm paper, black ink, no
+// accent colour at all. Corners are near-square (3 dp covers, 4 dp panels) and hierarchy is carried
+// by weight, hairlines and tiny monospace codes. The only saturated thing on screen is cover art.
 //
-//   dark  : ink       #0C0C0E canvas / #16161A surface / #1D1D22 raised
-//   light : paper     #F7F4EF canvas / #FFFFFF surface / #F0EBE3 raised
-//   accent: ember     #FF8A4C on ink, #C2410C on paper (both clear AA for text)
+//   light: paper #F4F3EF canvas / #FDFCFA panel / #FEFDF8 milk  ink #181818, muted #646B62
+//   dark : ink   #191919 canvas / #242424 panel / #2D2D2D raised text #F2F2F2, muted #B7B7B7
+//
+// EMBER (the previous look, kept as a choice) - warm paper / near-black ink with a single ember
+// accent, 12/16/24 dp rounded surfaces.
+//
+// ---------------------------------------------------------------------------
+// Archive palette
 // ---------------------------------------------------------------------------
 
-/** Accent for dark surfaces (large type, icons, active states). */
-val BrandOrange = Color(0xFFFF8A4C)
+/** Primary ink for text, icons and filled controls in the light theme. */
+val Ink = Color(0xFF181818)
 
-/** Accent pressed / container variant. */
-val BrandOrangeDark = Color(0xFFD9601F)
+/** Secondary text: 7.4:1 on paper. */
+val InkMuted = Color(0xFF646B62)
 
-/** Lighter accent used for gradients on artwork overlays. */
-val BrandOrangeSoft = Color(0xFFFFB37A)
+val PaperBg = Color(0xFFF4F3EF)
+val PaperSurface = Color(0xFFFDFCFA)
+val PaperMilk = Color(0xFFFEFDF8)
+val PaperRaised = Color(0xFFECEAE4)
 
-/**
- * Accent used for *text and icons* on light surfaces: the bright ember only reaches ~2.4:1 on
- * paper, which is fine for a filled button but not for a label.
- */
-val BrandOrangeDeep = Color(0xFFC2410C)
+val DarkBg = Color(0xFF191919)
+val DarkSurface = Color(0xFF242424)
+val DarkSurfaceVariant = Color(0xFF2D2D2D)
+val DarkOutline = Color(0xFF3C3C3C)
 
-val DarkBg = Color(0xFF0C0C0E)
-val DarkSurface = Color(0xFF16161A)
-val DarkSurfaceVariant = Color(0xFF1D1D22)
-val DarkOutline = Color(0xFF2E2E35)
+val LightBg = PaperBg
+val LightSurface = PaperSurface
+val LightSurfaceVariant = PaperRaised
+val LightOutline = Color(0xFFB9BDB4)
 
-val LightBg = Color(0xFFF7F4EF)
-val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFF0EBE3)
-val LightOutline = Color(0xFFE2DCD2)
+val TextPrimaryDark = Color(0xFFF2F2F2)
+val TextSecondaryDark = Color(0xFFB7B7B7)
+val TextPrimaryLight = Ink
+val TextSecondaryLight = InkMuted
 
-/** Primary text: warm off-white rather than pure white, which reads softer on ink. */
-val TextPrimaryDark = Color(0xFFF4F1EC)
+// ---------------------------------------------------------------------------
+// Ember palette (the previous theme, selectable)
+// ---------------------------------------------------------------------------
 
-/** Secondary text: 7.9:1 on #16161A - comfortable for captions and metadata. */
-val TextSecondaryDark = Color(0xFFA29C93)
-val TextPrimaryLight = Color(0xFF17130F)
-val TextSecondaryLight = Color(0xFF6B645B)
+val EmberAccentDark = Color(0xFFFF8A4C)
+val EmberAccentSoft = Color(0xFFFFB37A)
+val EmberAccentDeep = Color(0xFFC2410C)
 
-val AdFreeAccent = Color(0xFF4CAF50)
+val EmberBgDark = Color(0xFF0C0C0E)
+val EmberSurfaceDark = Color(0xFF16161A)
+val EmberRaisedDark = Color(0xFF1D1D22)
+val EmberOutlineDark = Color(0xFF2E2E35)
+
+val EmberBgLight = Color(0xFFF7F4EF)
+val EmberSurfaceLight = Color(0xFFFFFFFF)
+val EmberRaisedLight = Color(0xFFF0EBE3)
+val EmberOutlineLight = Color(0xFFE2DCD2)
+val EmberTextDark = Color(0xFFF4F1EC)
+val EmberTextMutedDark = Color(0xFFA29C93)
+val EmberTextLight = Color(0xFF17130F)
+val EmberTextMutedLight = Color(0xFF6B645B)
+
+/** The single semantic colour: used only where "something is wrong", never for emphasis. */
+val AdFreeAccent = Color(0xFF2E7D32)
 
 // ---------------------------------------------------------------------------
 // Glass tokens
 //
-// Glass is now the *exception*, not the rule: it survives only in the floating bottom navigation
-// (the one place where content genuinely scrolls underneath). Everything else uses a solid
-// surface, so these tokens are kept because the bar still samples and blurs the page behind it.
-//
-// The numeric spec tokens are unchanged on purpose - GlassContrastTest pins them, and the bar's
-// legibility guarantee (WCAG AA over pure white / pure black artwork scrolling underneath) still
-// depends on the fog being dense.
+// Glass survives only in the floating bottom dock. Its fog is milk rather than white in the archive
+// theme, so it reads as a pane of the same paper; ember keeps its near-white / graphite fog.
 // ---------------------------------------------------------------------------
 
 /** Spec tokens. */
@@ -76,66 +90,61 @@ const val GlassInnerShadowAlpha = 0.10f
 /** Specular sheen angle, in degrees (`HighlightStyle.Default.angle`). */
 const val GlassHighlightAngle = 45f
 
-/**
- * Fog strength per surface kind.
- *
- * The bottom bar is nearly opaque now: it floats over cover art mid-scroll, and a translucent bar
- * with a blur behind it was the single biggest source of visual noise in the old design.
- */
-const val GlassBottomBarFogAlphaDark = 0.92f
-const val GlassBottomBarFogAlphaLight = 0.94f
-const val GlassTopBarFogAlphaDark = 0.86f
-const val GlassTopBarFogAlphaLight = 0.90f
+/** Fog strength per surface kind. The dock is nearly opaque: it floats over cover art mid-scroll. */
+const val GlassBottomBarFogAlphaDark = 0.94f
+const val GlassBottomBarFogAlphaLight = 0.97f
+const val GlassTopBarFogAlphaDark = 0.88f
+const val GlassTopBarFogAlphaLight = 0.94f
 const val GlassPanelFogAlphaDark = 0.45f
 const val GlassPanelFogAlphaLight = 0.52f
 
-/** Neutral fog bases. */
-val GlassFogDark = Color(0xFF121215)
-val GlassFogLight = Color(0xFFFBFAF7)
-
-/** Canvas opacity: fully opaque - the backdrop is a quiet gradient, not something to see through. */
+/** Canvas opacity: fully opaque - the backdrop is paper, not something to see through. */
 const val CanvasAlphaDark = 1f
 const val CanvasAlphaLight = 1f
 
-/** Rim light for the bar. */
+/** Rim light for the dock: a hairline, not a sheen. */
 val GlassSpecular = Color(0xFFFFFFFF)
 val GlassRimTop = Color(0x1FFFFFFF)
 val GlassRimBottom = Color(0x0AFFFFFF)
-val GlassRimTopLight = Color(0x66FFFFFF)
+val GlassRimTopLight = Color(0x66000000)
 val GlassRimBottomLight = Color(0x0F000000)
 
-/** Retained for the legacy backdrop helper; the new backdrop uses a single ember glow. */
+/** Retained for the legacy backdrop helper; the archive backdrop draws no coloured shapes. */
 val GlassAccentBlue = Color(0xFF2F80ED)
 val GlassAccentViolet = Color(0xFF7C4DFF)
 val GlassAccentTeal = Color(0xFF00BFA5)
 
-/**
- * Backdrop glow strength. Deliberately a whisper: it should register as "the page has a
- * temperature", not as a coloured shape behind the glass.
- */
+/** Grid / registration strength on the paper. A whisper, not a pattern. */
 const val BackdropBlobAlpha = 0.34f
 
-/** Root gradient behind everything: ink with a single, barely-there warm wash at the top. */
-val BackdropBrush: Brush = Brush.verticalGradient(
-    listOf(
-        Color(0xFF14100F),
-        Color(0xFF0C0C0E),
-        Color(0xFF0B0B0D),
-    ),
-)
+/** Archive root canvas: flat paper (light) / graphite (dark). No gradient, no glow. */
+val ArchiveBackdropDark: Brush = Brush.verticalGradient(listOf(DarkBg, DarkBg))
+val ArchiveBackdropLight: Brush = Brush.verticalGradient(listOf(PaperBg, PaperBg))
 
-/** Light-theme root gradient: warm paper, slightly darker at the bottom. */
-val BackdropBrushLight: Brush = Brush.verticalGradient(
-    listOf(
-        Color(0xFFFBF8F3),
-        Color(0xFFF7F4EF),
-        Color(0xFFF2EEE7),
-    ),
+/** Ember root canvas: warm gradient with a whisper of warmth at the top. */
+val EmberBackdropDark: Brush = Brush.verticalGradient(
+    listOf(Color(0xFF14100F), Color(0xFF0C0C0E), Color(0xFF0B0B0D)),
+)
+val EmberBackdropLight: Brush = Brush.verticalGradient(
+    listOf(Color(0xFFFBF8F3), Color(0xFFF7F4EF), Color(0xFFF2EEE7)),
 )
 
 /** Soft elevation shadow tint used under floating surfaces. */
 val GlassShadow = Color(0x40000000)
 
+/**
+ * Fog bases for the glass bar. Archive fogs with its own paper/graphite surface, so these are the
+ * same values [glassFogColor] uses at runtime; kept as named tokens for the contrast tests.
+ */
+val GlassFogDark = DarkSurface
+val GlassFogLight = PaperMilk
+
+/** The previous accent, kept so the contrast tests still have a "brightest backdrop" colour. */
+val BrandOrange = Ink
+val BrandOrangeSoft = Ink
+val BrandOrangeDeep = Ink
+val BrandOrangeDark = Ink
+
 /** Hairline used between rows and around surfaces. */
-val HairlineDark = Color(0xFF23232A)
-val HairlineLight = Color(0xFFE6E0D6)
+val HairlineDark = Color(0xFF3C3C3C)
+val HairlineLight = Color(0xFFD8DBD5)

@@ -21,9 +21,9 @@ import androidx.compose.ui.unit.dp
  * [GlassSpecTest] asserts the overlap with the size tokens, so the two scales cannot drift apart.
  */
 val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(GlassSizes.RadiusInner),
-    medium = RoundedCornerShape(GlassSizes.RadiusStandard),
-    large = RoundedCornerShape(GlassSizes.RadiusHeavy),
-    extraLarge = RoundedCornerShape(32.dp),
+    extraSmall = RoundedCornerShape(2.dp),
+    small = RoundedCornerShape(3.dp),
+    medium = RoundedCornerShape(4.dp),
+    large = RoundedCornerShape(6.dp),
+    extraLarge = RoundedCornerShape(10.dp),
 )
