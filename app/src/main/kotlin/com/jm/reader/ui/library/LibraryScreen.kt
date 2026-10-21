@@ -67,6 +67,7 @@ import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
+import com.jm.reader.ui.components.ArchiveBookRow
 import com.jm.reader.ui.components.ArchiveMasthead
 import com.jm.reader.ui.components.ArchiveTabs
 import com.jm.reader.ui.components.ShelfBank
@@ -233,29 +234,42 @@ private fun FavoritesList(
             // A real retry control: the only recovery used to be leaving and re-entering the tab.
             error != null -> ErrorView(error!!, onRetry = { reload++ }, modifier = Modifier.fillMaxSize())
             items.isEmpty() -> EmptyView(s.emptyFavorites, Modifier.fillMaxSize())
-            shelf -> Column(Modifier.fillMaxSize()) {
-                ShelfBank(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    items = items.map {
-                        ShelfItem(
-                            id = it.id,
-                            title = it.name,
-                            subtitle = it.author.orEmpty(),
-                            cover = it.image.takeIf { url -> url.startsWith("http") }
-                                ?: repo.comicCover(it.id, it.updateAt),
-                        )
-                    },
-                    onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
-                )
-                // Normal layout below the bank, exactly like the reference: the shelf is a header,
-                // not a replacement for the grid.
-                ComicGrid(
-                    items = items,
-                    repo = repo,
-                    onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
-                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = BottomNavReserve),
-                    modifier = Modifier.weight(1f),
-                )
+            // One scroll, like the home register: the bank is the first item of the list, so it
+            // slides away as the reader goes down instead of pinning the grid underneath it.
+            shelf -> LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = 8.dp,
+                    end = 8.dp,
+                    bottom = BottomNavReserve,
+                ),
+            ) {
+                item(key = "shelf") {
+                    ShelfBank(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        items = items.map {
+                            ShelfItem(
+                                id = it.id,
+                                title = it.name,
+                                subtitle = it.author.orEmpty(),
+                                cover = it.image.takeIf { url -> url.startsWith("http") }
+                                    ?: repo.comicCover(it.id, it.updateAt),
+                            )
+                        },
+                        onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
+                    )
+                }
+                items(items, key = { "row-" + it.id }) { item ->
+                    ArchiveBookRow(
+                        id = item.id,
+                        title = item.name,
+                        author = item.author.orEmpty().ifBlank { item.category?.title.orEmpty() },
+                        cover = item.image.takeIf { url -> url.startsWith("http") }
+                            ?: repo.comicCover(item.id, item.updateAt),
+                        onClick = { navController.navigate(Routes.comicDetail(item.id)) },
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
             }
             else -> ComicGrid(
                 items = items,
@@ -381,6 +395,24 @@ private fun LocalHistory(
                     Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = BottomNavReserve),
                 ) {
+                    // History gets the same bank as favourites and downloads: the shelf is a
+                    // header inside the one scroll, not a separate fixed block.
+                    if (shelf && entries.isNotEmpty()) {
+                        item(key = "history-shelf") {
+                            ShelfBank(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                items = entries.map {
+                                    ShelfItem(
+                                        id = it.albumId,
+                                        title = it.name,
+                                        subtitle = it.episodeName.orEmpty(),
+                                        cover = repo.comicCover(it.albumId, it.updateAt),
+                                    )
+                                },
+                                onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
+                            )
+                        }
+                    }
                     items(entries, key = { it.albumId }) { entry ->
                         HistoryRow(
                             entry = entry,
