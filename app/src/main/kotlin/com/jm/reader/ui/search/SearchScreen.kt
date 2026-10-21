@@ -73,9 +73,14 @@ import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSearchHistoryManager
 import com.jm.reader.ui.components.AppTopBar
+import com.jm.reader.ui.components.ArchiveBookRow
+import com.jm.reader.ui.components.ArchiveSectionHeader
+import com.jm.reader.ui.components.ShelfBank
+import com.jm.reader.ui.components.ShelfItem
 import com.jm.reader.ui.components.ComicCard
 import com.jm.reader.ui.components.EmptyView
 import com.jm.reader.ui.components.ErrorView
+import com.jm.reader.ui.components.FilterPill
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.AppStrings
@@ -288,7 +293,12 @@ fun SearchScreen(
 
     Scaffold(
         containerColor = Color.Transparent,
-        topBar = { AppTopBar(s.search, onBack = { navController.popBackStack() }) },
+        topBar = {
+            AppTopBar(
+                if (initialHotTagsOnly) s.hotTagsTitle else s.search,
+                onBack = { navController.popBackStack() },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -550,72 +560,85 @@ private fun DiscoverPane(
     onItemClick: (ComicListItem) -> Unit,
 ) {
     val s = LocalAppStrings.current
-    LazyColumn(Modifier.fillMaxSize()) {
-        if (recent.isNotEmpty()) {
-            item {
-                Row(
-                    Modifier.fillMaxWidth().padding(12.dp, 12.dp, 4.dp, 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        s.searchHistory,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onClearRecent) { Text(s.searchHistoryClear) }
-                }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        // The bank first, like every other archive page: this is the 热门 (or empty-search) page,
+        // and it used to be chips over a glass grid.
+        if (random.isNotEmpty()) {
+            item(key = "shelf") {
+                ShelfBank(
+                    items = random.take(10).map {
+                        ShelfItem(
+                            id = it.id,
+                            title = it.name,
+                            subtitle = listOfNotNull(it.author, it.category?.title)
+                                .filter { part -> part.isNotBlank() }
+                                .joinToString(" · "),
+                            cover = it.image.takeIf { url -> url.startsWith("http") }
+                                ?: repo.comicCover(it.id, it.updateAt),
+                        )
+                    },
+                    onOpen = { book -> onItemClick(random.first { it.id == book.id }) },
+                )
             }
-            item {
+        }
+
+        if (recent.isNotEmpty()) {
+            item(key = "recent-title") {
+                ArchiveSectionHeader(
+                    code = "01 / RECENT",
+                    title = s.searchHistory,
+                    actionLabel = s.searchHistoryClear,
+                    onAction = onClearRecent,
+                )
+            }
+            item(key = "recent-chips") {
                 FlowRow(
                     Modifier.padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     recent.forEach { term ->
-                        SuggestionChip(
-                            onClick = { onRecentClick(term) },
-                            label = { Text(term, maxLines = 1) },
-                        )
+                        FilterPill(text = term, selected = false, onClick = { onRecentClick(term) })
                     }
                 }
             }
         }
+
         if (hotTags.isNotEmpty()) {
-            item {
-                Text(
-                    s.hotTagsTitle,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(12.dp, 12.dp, 12.dp, 4.dp),
-                )
+            item(key = "tags-title") {
+                ArchiveSectionHeader(code = "02 / TAGS", title = s.hotTagsTitle)
             }
-            item {
+            item(key = "tags") {
                 FlowRow(
                     Modifier.padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     hotTags.take(30).forEach { tag ->
-                        SuggestionChip(
+                        FilterPill(
+                            text = "#${tag.title}",
+                            selected = false,
                             onClick = { onTagClick(tag.title) },
-                            label = { Text("#${tag.title}", maxLines = 1) },
                         )
                     }
                 }
             }
         }
+
         if (random.isNotEmpty()) {
-            item {
-                Text(
-                    s.forYou,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(12.dp, 16.dp, 12.dp, 4.dp),
-                )
+            item(key = "foryou-title") {
+                ArchiveSectionHeader(code = "03 / FOR YOU", title = s.forYou)
             }
-            items(random.take(24), key = { it.id }) { item ->
-                RandomRow(item, repo, onClick = { onItemClick(item) })
+            items(random.take(24), key = { "r-" + it.id }) { item ->
+                ArchiveBookRow(
+                    id = item.id,
+                    title = item.name,
+                    author = item.author.orEmpty().ifBlank { item.category?.title.orEmpty() },
+                    cover = item.image.takeIf { url -> url.startsWith("http") }
+                        ?: repo.comicCover(item.id, item.updateAt),
+                    onClick = { onItemClick(item) },
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
             }
         }
     }
