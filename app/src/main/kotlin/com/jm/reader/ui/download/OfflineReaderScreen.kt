@@ -114,7 +114,7 @@ private fun OfflinePageImage(uri: Uri) {
                     .fillMaxWidth()
                     .aspectRatio(if (bmp.height > 0) bmp.width.toFloat() / bmp.height.toFloat() else 3f / 4f),
             )
-            failed -> Text(LocalAppStrings.current.imageLoadFail, color = Color.Gray, modifier = Modifier.padding(24.dp))
+            failed -> Text(LocalAppStrings.current.reader.imageLoadFail, color = Color.Gray, modifier = Modifier.padding(24.dp))
             else -> CircularProgressIndicator(Modifier.padding(40.dp))
         }
     }

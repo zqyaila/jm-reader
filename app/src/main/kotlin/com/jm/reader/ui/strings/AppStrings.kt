@@ -48,23 +48,25 @@ data class AppStrings(
     val singleFileWork: String,
     val relatedWorks: String,
     val noDescription: String,
+    val synopsis: String,
     val loadFail: String,
     // Work id (the JM number of the album), shown on cards and on the detail page
     val workIdLabel: String,
     val workIdCopied: String,
     // Reader
     val back: String,
-    val toggleMode: String,
-    val chapterList: String,
-    val chooseChapter: String,
-    val singleFile: String,
-    val current: String,
     val close: String,
-    val prevChapter: String,
-    val nextChapter: String,
-    val imageLoadFail: String,
     val retry: String,
     val chapterFmt: String,          // "第 %1\$d 話" / "Episode %1\$d"
+    /**
+     * Reader-only copy, kept in its own table.
+     *
+     * `AppStrings` already carries ~240 fields and the JVM refuses a constructor with more than
+     * 255 parameter slots - adding the reader tools inline pushed it over and every test failed
+     * with `ClassFormatError: Too many arguments in method signature`. Grouping the reader's
+     * strings also keeps the paging vocabulary in one place.
+     */
+    val reader: ReaderStrings,
     // Search
     val clear: String,
     val hotTagsTitle: String,
@@ -330,21 +332,15 @@ val ZhCN = AppStrings(
     singleFileWork = "单文件作品，点击阅读",
     relatedWorks = "相关作品",
     noDescription = "（无描述）",
+    synopsis = "简介",
     loadFail = "加载失败",
     workIdLabel = "作品ID",
     workIdCopied = "已复制作品ID",
     back = "返回",
-    toggleMode = "切换模式",
-    chapterList = "章节",
-    chooseChapter = "选择章节",
-    singleFile = "单文件",
-    current = "当前",
     close = "关闭",
-    prevChapter = "上一话",
-    nextChapter = "下一话",
-    imageLoadFail = "图片加载失败",
     retry = "重试",
     chapterFmt = "第 %1\$d 话",
+    reader = ReaderStringsZh,
     clear = "清除",
     hotTagsTitle = "热门标签",
     noResult = "无搜索结果",
@@ -575,21 +571,15 @@ val ZhTW = AppStrings(
     singleFileWork = "單一檔案作品，點擊閱讀",
     relatedWorks = "相關作品",
     noDescription = "（無描述）",
+    synopsis = "簡介",
     loadFail = "載入失敗",
     workIdLabel = "作品ID",
     workIdCopied = "已複製作品ID",
     back = "返回",
-    toggleMode = "切換模式",
-    chapterList = "章節",
-    chooseChapter = "選擇章節",
-    singleFile = "單一檔案",
-    current = "當前",
     close = "關閉",
-    prevChapter = "上一話",
-    nextChapter = "下一話",
-    imageLoadFail = "圖片載入失敗",
     retry = "重試",
     chapterFmt = "第 %1\$d 話",
+    reader = ReaderStringsTw,
     clear = "清除",
     hotTagsTitle = "熱門標籤",
     noResult = "無搜尋結果",
@@ -820,21 +810,15 @@ val En = AppStrings(
     singleFileWork = "Single-file work, tap to read",
     relatedWorks = "Related",
     noDescription = "(No description)",
+    synopsis = "Synopsis",
     loadFail = "Failed to load",
     workIdLabel = "Work ID",
     workIdCopied = "Work ID copied",
     back = "Back",
-    toggleMode = "Toggle mode",
-    chapterList = "Chapters",
-    chooseChapter = "Choose chapter",
-    singleFile = "Single file",
-    current = "Current",
     close = "Close",
-    prevChapter = "Previous",
-    nextChapter = "Next",
-    imageLoadFail = "Failed to load image",
     retry = "Retry",
     chapterFmt = "Episode %1\$d",
+    reader = ReaderStringsEn,
     clear = "Clear",
     hotTagsTitle = "Hot tags",
     noResult = "No results",
@@ -1021,3 +1005,101 @@ val En = AppStrings(
     updateInstallBlocked = "Allow installing from unknown sources, then try again",
     updateSizeFmt = "Package %1\$s",
 )
+
+
+/**
+ * Copy used only inside the reader.
+ *
+ * Split from [AppStrings] because the JVM caps a constructor at 255 parameter slots and the single
+ * table had already reached ~240; the reader's paging vocabulary is also the one block that keeps
+ * growing as tools are added.
+ */
+interface ReaderStrings {
+    val toggleMode: String
+    val chapterList: String
+    val chooseChapter: String
+    val singleFile: String
+    val current: String
+    val prevChapter: String
+    val nextChapter: String
+    val imageLoadFail: String
+
+    // Reading tools
+    val bookmark: String
+    val bookmarkList: String
+    val bookmarkAdded: String
+    val bookmarkRemoved: String
+    val bookmarkEmpty: String
+    val bookmarkDelete: String
+    val pageFmt: String
+    val autoScroll: String
+    val autoScrollStop: String
+    val imageSaved: String
+    val imageSaveFailed: String
+}
+
+private object ReaderStringsZh : ReaderStrings {
+    override val toggleMode = "切换模式"
+    override val chapterList = "章节"
+    override val chooseChapter = "选择章节"
+    override val singleFile = "单文件"
+    override val current = "当前"
+    override val prevChapter = "上一话"
+    override val nextChapter = "下一话"
+    override val imageLoadFail = "图片加载失败"
+    override val bookmark = "书签"
+    override val bookmarkList = "书签列表"
+    override val bookmarkAdded = "已添加书签"
+    override val bookmarkRemoved = "已移除书签"
+    override val bookmarkEmpty = "还没有书签"
+    override val bookmarkDelete = "删除书签"
+    override val pageFmt = "第 %1\$d 页"
+    override val autoScroll = "自动滚动"
+    override val autoScrollStop = "停止滚动"
+    override val imageSaved = "已保存到相册"
+    override val imageSaveFailed = "保存失败，请检查存储权限"
+}
+
+private object ReaderStringsTw : ReaderStrings {
+    override val toggleMode = "切換模式"
+    override val chapterList = "章節"
+    override val chooseChapter = "選擇章節"
+    override val singleFile = "單一檔案"
+    override val current = "當前"
+    override val prevChapter = "上一話"
+    override val nextChapter = "下一話"
+    override val imageLoadFail = "圖片載入失敗"
+    override val bookmark = "書籤"
+    override val bookmarkList = "書籤列表"
+    override val bookmarkAdded = "已加入書籤"
+    override val bookmarkRemoved = "已移除書籤"
+    override val bookmarkEmpty = "還沒有書籤"
+    override val bookmarkDelete = "刪除書籤"
+    override val pageFmt = "第 %1\$d 頁"
+    override val autoScroll = "自動捲動"
+    override val autoScrollStop = "停止捲動"
+    override val imageSaved = "已儲存到相簿"
+    override val imageSaveFailed = "儲存失敗，請檢查儲存權限"
+}
+
+private object ReaderStringsEn : ReaderStrings {
+    override val toggleMode = "Toggle mode"
+    override val chapterList = "Chapters"
+    override val chooseChapter = "Choose chapter"
+    override val singleFile = "Single file"
+    override val current = "Current"
+    override val prevChapter = "Previous"
+    override val nextChapter = "Next"
+    override val imageLoadFail = "Failed to load image"
+    override val bookmark = "Bookmark"
+    override val bookmarkList = "Bookmarks"
+    override val bookmarkAdded = "Bookmark added"
+    override val bookmarkRemoved = "Bookmark removed"
+    override val bookmarkEmpty = "No bookmarks yet"
+    override val bookmarkDelete = "Delete bookmark"
+    override val pageFmt = "Page %1\$d"
+    override val autoScroll = "Auto-scroll"
+    override val autoScrollStop = "Stop scrolling"
+    override val imageSaved = "Saved to gallery"
+    override val imageSaveFailed = "Could not save - check storage permission"
+}
