@@ -64,8 +64,10 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   and a top face, and the weight `w = cos²(|d| / 1.48 · π/2)` drives both the pull-out
   `0.84·cover·w·(1.24 − 0.24w)` and the lift. Neighbours follow `railY(d) = 2.5d + 0.45d²`, and the
   lanes wrap around, so it reads as a physical wall of books rather than a cover banner. The loop is
-  endless: sliding past the first book brings back the last, and the coordinate is re-seated after
-  every gesture so a long fling cannot drift. Tap a cover or a spine to open it: the cover itself
+  a fixed pool, as in the reference: `count + 2 x edgeSlots` volumes are mounted once, each slot
+  always holding the same book, and scrolling only moves a wrapped `logicalFocus`. Crossing the
+  last book is pixel-identical to crossing any other lane - nothing is inserted, remeasured or
+  remounted - so a long flick can neither drift nor flash. Tap a cover or a spine to open it: the cover itself
   flies to the dossier's cover plate (300 ms, with the shelf dimming underneath) while the detail
   page fades and settles in beneath it, so the hand-off reads as one movement rather than a flight
   followed by a page change; an off-centre tap centres its book first. Covers are

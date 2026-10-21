@@ -64,12 +64,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,31 +130,27 @@ fun ShelfBank(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val reduceMotion = !motion
-
-    var focus by remember { mutableFloatStateOf(0f) }
-    // The lane window is driven by this integer, not by a derived read of the float. It is written
-    // from the drag callback itself, so a drag that crosses the tenth book mounts the eleventh lane
-    // immediately - a `derivedStateOf` on the float only refreshed after the gesture settled, which
-    // made the bank look like it stopped at the edge until the finger came up.
-    var laneAnchor by remember { mutableIntStateOf(0) }
-    // The cover lifts for 160 ms before the route slides in, so the tap reads as "taking the book
-    // off the shelf" rather than as the page swapping under the finger.
-    var openingSlot by remember { mutableStateOf<Int?>(null) }
-    val opening = remember { Animatable(0f) }
-    // Guards a second tap while the cover is already in the air.
-    var flying by remember { mutableStateOf(false) }
     val flight = LocalShelfFlight.current
+
+    /**
+     * Scroll position in books, unbounded - what a `Scrollable` would keep as pixels/pitch.
+     *
+     * It never indexes a list directly: the row wraps it into `0 until count` before layout, so
+     * the pool of mounted volumes keeps its identity and the same books repeat forever. That is
+     * the trick behind the reference's endless bank (`_WavePose.logicalFocus` / `focus`), and the
+     * reason nothing remounts while a finger travels.
+     */
+    var logicalFocus by remember { mutableFloatStateOf(0f) }
+    // Written only when the centre crosses a book: the counter and the label row subscribe to it,
+    // so a drag does not recompose them every frame.
+    var labelLane by remember { mutableIntStateOf(0) }
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var lastDetent by remember { mutableIntStateOf(0) }
 
-    fun setFocus(value: Float) {
-        focus = value
-        val lane = value.roundToInt()
-        if (lane != laneAnchor) laneAnchor = lane
-    }
+    var openingSlot by remember { mutableStateOf<Int?>(null) }
+    val opening = remember { Animatable(0f) }
+    var flying by remember { mutableStateOf(false) }
 
-    // The reference's 720 ms assembly: books slide in from depth along the projection axis, in
-    // reading order, while their centre weight arrives later (interval .38 → 1).
     val entrance = remember { Animatable(if (animateEntrance && motion) 0f else 1f) }
     LaunchedEffect(Unit) {
         if (animateEntrance && motion) {
@@ -160,65 +158,54 @@ fun ShelfBank(
         }
     }
 
-    /**
-     * Pulls an unbounded focus back into `0 until count` once a gesture has finished.
-     *
-     * The bank is a loop, so `focus = focus ± count` is the same picture: every lane maps back
-     * through `floorMod`. Re-seating it keeps the float from drifting (a long fling can cross
-     * hundreds of books) and keeps the lane window near zero, which is what makes the loop feel
-     * endless instead of running out of precision or slots.
-     */
-    fun reseat() {
-        if (count <= 0) return
-        val wrapped = shelfWrapFocus(focus, count)
-        if (abs(wrapped - focus) > 0.0001f) {
-            setFocus(wrapped)
-            lastDetent = wrapped.roundToInt()
-        }
+    fun setLogical(value: Float) {
+        logicalFocus = value
+        val lane = value.roundToInt()
+        if (lane != labelLane) labelLane = lane
     }
 
-    fun settle(velocityDp: Float, pitchDp: Float) {
+    fun settle(velocityDp: Float, pitchPx: Float) {
         if (count < 2) return
         flingJob?.cancel()
         flingJob = scope.launch {
             if (reduceMotion || abs(velocityDp) < 60f) {
-                Animatable(focus).animateTo(
-                    targetValue = focus.roundToInt().toFloat(),
+                Animatable(logicalFocus).animateTo(
+                    targetValue = logicalFocus.roundToInt().toFloat(),
                     animationSpec = spring(dampingRatio = 0.86f, stiffness = 320f),
-                ) { setFocus(value) }
-                reseat()
-                return@launch
+                ) { setLogical(value) }
+            } else {
+                val anim = Animatable(logicalFocus)
+                // Lighter friction than the previous build (1.35): the reference coasts across
+                // several books before handing over to the detent, which is what makes a flick
+                // travel instead of sticking.
+                anim.animateDecay(
+                    initialVelocity = velocityDp / pitchPx,
+                    animationSpec = exponentialDecay(frictionMultiplier = 0.85f),
+                ) { setLogical(value) }
+                anim.animateTo(
+                    targetValue = anim.value.roundToInt().toFloat(),
+                    animationSpec = spring(dampingRatio = 0.82f, stiffness = 300f),
+                ) { setLogical(value) }
             }
-            val anim = Animatable(focus)
-            anim.animateDecay(
-                initialVelocity = velocityDp / pitchDp,
-                animationSpec = exponentialDecay(frictionMultiplier = 1.35f),
-            ) { setFocus(value) }
-            anim.animateTo(
-                targetValue = anim.value.roundToInt().toFloat(),
-                animationSpec = spring(dampingRatio = 0.82f, stiffness = 300f),
-            ) { setFocus(value) }
-            reseat()
+            // One lap away is the same picture; re-seating keeps the float small after a long flick.
+            setLogical(shelfWrapFocus(logicalFocus, count))
         }
     }
 
     fun step(delta: Int) {
         if (count < 2) return
         flingJob?.cancel()
-        val target = (focus + 0.5f).toInt() + delta
+        val target = logicalFocus.roundToInt() + delta
         flingJob = scope.launch {
-            Animatable(focus).animateTo(
+            Animatable(logicalFocus).animateTo(
                 targetValue = target.toFloat(),
                 animationSpec = tween(
                     durationMillis = 420,
                     easing = CubicBezierEasing(0.2f, 1.06f, 0.35f, 1f),
                 ),
-            ) { setFocus(value) }
-            reseat()
+            ) { setLogical(value) }
         }
     }
-
-    val focusedIndex = Math.floorMod(laneAnchor, count)
 
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -228,164 +215,303 @@ fun ShelfBank(
             val cover = shelfCover(viewport)
             val body = shelfBodyHeight(cover)
             val rowHeight = shelfRowHeight(cover, body)
+            val footprint = shelfFootprint(spine, cover)
+            val startX = viewport / 2f - footprint / 2f + shelfPull(cover) * ShelfDepthX
             val density = LocalDensity.current
 
+            // Mirror of the reference's `edgeSlots` / `poolCount`: enough lanes either side to
+            // fill the viewport plus the pulled-out cover, and a lap of padding at both ends so
+            // the wrapped focus always has neighbours.
+            val edgeSlots = if (count < 2) 0 else {
+                ceil((viewport / 2f + footprint + shelfPull(cover) * ShelfDepthX) / pitch).toInt() + 2
+            }
+            val poolCount = if (count < 2) count else count + edgeSlots * 2
+            val pool = remember(items, count, poolCount, edgeSlots) {
+                List(poolCount) { slot -> items[Math.floorMod(slot - edgeSlots, count)] }
+            }
+
+            // The value the row is positioned by: a wrapped focus that always sits in the middle
+            // of the fixed pool, so scrolling is only a fractional shift of the same books.
+            val displayFocus: () -> Float = {
+                if (count < 2) 0f else edgeSlots + shelfWrapFocus(logicalFocus, count)
+            }
+
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(
-                    Modifier
+                ShelfRow(
+                    pool = pool,
+                    count = count,
+                    edgeSlots = edgeSlots,
+                    displayFocus = displayFocus,
+                    entrance = { entrance.value },
+                    viewport = viewport,
+                    startX = startX,
+                    pitch = pitch,
+                    spine = spine,
+                    cover = cover,
+                    body = body,
+                    openingSlot = openingSlot,
+                    opening = { opening.value },
+                    onTapSlot = { slot, bounds ->
+                        val d = slot - displayFocus()
+                        if (abs(d) < 0.35f) {
+                            val book = pool[slot]
+                            when {
+                                flight != null && book.cover.isNotBlank() && bounds.width > 0f &&
+                                    !flying -> {
+                                    flying = true
+                                    flight.launch(
+                                        ShelfFlightRequest(book.cover, bounds) {
+                                            flying = false
+                                            onOpen(book)
+                                        },
+                                    )
+                                }
+                                openingSlot == null -> {
+                                    openingSlot = slot
+                                    scope.launch {
+                                        opening.animateTo(
+                                            targetValue = 1f,
+                                            animationSpec = tween(
+                                                durationMillis = 160,
+                                                easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f),
+                                            ),
+                                        )
+                                        openingSlot = null
+                                        opening.snapTo(0f)
+                                        onOpen(book)
+                                    }
+                                }
+                            }
+                        } else {
+                            // Tapping a neighbour brings it to the middle, like the reference.
+                            flingJob?.cancel()
+                            val target = logicalFocus + d.roundToInt()
+                            flingJob = scope.launch {
+                                Animatable(logicalFocus).animateTo(
+                                    targetValue = target,
+                                    animationSpec = tween(
+                                        durationMillis = 420,
+                                        easing = CubicBezierEasing(0.2f, 1.06f, 0.35f, 1f),
+                                    ),
+                                ) { setLogical(value) }
+                            }
+                        }
+                    },
+                    modifier = Modifier
                         .fillMaxWidth()
                         .height(rowHeight.dp)
-                        .clipToBounds(),
-                ) {
-                    ShelfScene(
-                        items = items,
-                        focus = { focus },
-                        laneAnchor = laneAnchor,
-                        entrance = { entrance.value },
-                        viewport = viewport,
+                        .draggable(
+                            orientation = Orientation.Horizontal,
+                            state = rememberDraggableState { delta ->
+                                if (count < 2) return@rememberDraggableState
+                                flingJob?.cancel()
+                                setLogical(logicalFocus - delta / (pitch * density.density))
+                                val lane = logicalFocus.roundToInt()
+                                if (lane != lastDetent && abs(logicalFocus - lane) < 0.12f) {
+                                    lastDetent = lane
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                }
+                            },
+                            onDragStopped = { velocity -> settle(-velocity, pitch * density.density) },
+                        ),
+                )
+
+                ShelfCaption(
+                    items = items,
+                    count = count,
+                    lane = { labelLane },
+                    onOpen = { onOpen(items[Math.floorMod(labelLane, count)]) },
+                    onPrev = { step(-1) },
+                    onNext = { step(1) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Title, author and the "01 / 10" counter for the centred book.
+ *
+ * The lane is passed as a lambda so this is the *only* composable that recomposes when the centre
+ * crosses a book. Reading it in `ShelfBank` would drag the whole row - and its forty volumes -
+ * through composition on every detent during a flick.
+ */
+@Composable
+private fun ShelfCaption(
+    items: List<ShelfItem>,
+    count: Int,
+    lane: () -> Int,
+    onOpen: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+) {
+    val index = Math.floorMod(lane(), count)
+    val book = items[index]
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .widthIn(max = 520.dp)
+            .padding(top = 6.dp)
+            .glassClickable(shape = MaterialTheme.shapes.extraSmall, onClick = onOpen)
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                book.title,
+                fontSize = 17.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            if (book.subtitle.isNotBlank()) {
+                Text(
+                    book.subtitle,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+        }
+        Icon(
+            Icons.Filled.NorthEast,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+
+    if (count > 1) {
+        Row(
+            Modifier.fillMaxWidth().widthIn(max = 520.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End,
+        ) {
+            IconButton(onClick = onPrev, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                    contentDescription = "上一份档案",
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+            Text(
+                "${(index + 1).toString().padStart(2, '0')} / " +
+                    count.toString().padStart(2, '0'),
+                style = CodeTextStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            IconButton(onClick = onNext, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = "下一份档案",
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The row itself: one layout pass places every mounted volume, one draw pass paints the shadows.
+ *
+ * This mirrors the reference's `ArchiveShelfSceneRender`: a fixed pool of children whose
+ * *positions* are recalculated from the wrapped focus, instead of a list of slots rebuilt whenever
+ * the centre crosses a book. Nothing recomposes while a finger moves - only `place()` runs - which
+ * is what keeps a long flick smooth and the loop seamless.
+ */
+@Composable
+private fun ShelfRow(
+    pool: List<ShelfItem>,
+    count: Int,
+    edgeSlots: Int,
+    displayFocus: () -> Float,
+    entrance: () -> Float,
+    viewport: Float,
+    startX: Float,
+    pitch: Float,
+    spine: Float,
+    cover: Float,
+    body: Float,
+    openingSlot: Int?,
+    opening: () -> Float,
+    onTapSlot: (Int, Rect) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier
+            .clipToBounds()
+            .drawBehind {
+                val focus = displayFocus()
+                val ent = entrance()
+                pool.forEachIndexed { slot, _ ->
+                    val d = slot - focus
+                    val weight = shelfWeight(d) * crest(ent)
+                    val origin = shelfOrigin(cover, body, weight)
+                    val x = startX + d * pitch + origin.x
+                    // Only shadows that can be seen pay for a path.
+                    if (x < -cover - 20f || x > viewport + 20f) return@forEachIndexed
+                    val y = shelfRailY(d) + shelfBaseY(cover, body) + body
+                    drawShelfFloor(x, y, spine, cover)
+                }
+            },
+    ) {
+        Layout(
+            content = {
+                pool.forEachIndexed { slot, item ->
+                    ShelfVolume(
+                        item = item,
+                        number = Math.floorMod(slot - edgeSlots, count) + 1,
                         spine = spine,
                         cover = cover,
                         body = body,
-                        openingSlot = openingSlot,
-                        opening = { opening.value },
-                        onTapSlot = { slot, bounds ->
-                            if (abs(slot - focus) < 0.35f) {
-                                val book = items[Math.floorMod(slot, count)]
-                                when {
-                                    // Preferred: hand the cover to the root overlay, which flies it
-                                    // to the dossier's cover slot while the page fades in beneath.
-                                    flight != null && book.cover.isNotBlank() && bounds.width > 0f &&
-                                        !flying -> {
-                                        flying = true
-                                        flight.launch(
-                                            ShelfFlightRequest(book.cover, bounds) {
-                                                flying = false
-                                                onOpen(book)
-                                            },
-                                        )
-                                    }
-                                    // No overlay (preview, or a cover that never loaded): fall back
-                                    // to the short lift so the tap still reads as taking the book.
-                                    openingSlot == null -> {
-                                        openingSlot = slot
-                                        scope.launch {
-                                            opening.animateTo(
-                                                targetValue = 1f,
-                                                animationSpec = tween(
-                                                    durationMillis = 160,
-                                                    easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f),
-                                                ),
-                                            )
-                                            // Reset before navigating: the composition may be kept
-                                            // alive by the back stack, and a stale lift would leave
-                                            // the book scaled up when the user comes back.
-                                            openingSlot = null
-                                            opening.snapTo(0f)
-                                            onOpen(book)
-                                        }
-                                    }
-                                }
-                            } else {
-                                step((slot - focus).roundToInt())
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .draggable(
-                                orientation = Orientation.Horizontal,
-                                state = rememberDraggableState { delta ->
-                                    if (count < 2) return@rememberDraggableState
-                                    flingJob?.cancel()
-                                    setFocus(focus - delta / (pitch * density.density))
-                                    val lane = focus.roundToInt()
-                                    if (lane != lastDetent && abs(focus - lane) < 0.12f) {
-                                        lastDetent = lane
-                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    }
-                                },
-                                onDragStopped = { velocity ->
-                                    settle(-velocity, pitch * density.density)
-                                },
-                            ),
+                        isOpening = slot == openingSlot,
+                        opening = opening,
+                        onTap = { bounds -> onTapSlot(slot, bounds) },
                     )
                 }
-
-                // The extracted file's label and address; tapping opens it, exactly like the
-                // reference's `archive-shelf-open` row.
-                val book = items[focusedIndex]
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .widthIn(max = 520.dp)
-                        .padding(top = 6.dp)
-                        .glassClickable(shape = MaterialTheme.shapes.extraSmall) {
-                            onOpen(book)
-                        }
-                        .padding(vertical = 8.dp, horizontal = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            book.title,
-                            fontSize = 17.sp,
-                            lineHeight = 23.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.3).sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        if (book.subtitle.isNotBlank()) {
-                            Text(
-                                book.subtitle,
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 2.dp),
-                            )
-                        }
-                    }
-                    Icon(
-                        Icons.Filled.NorthEast,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(20.dp),
+            },
+            modifier = Modifier.fillMaxSize(),
+        ) { measurables, constraints ->
+            val placeables = measurables.map { it.measure(Constraints()) }
+            layout(constraints.maxWidth, constraints.maxHeight) {
+                val focus = displayFocus()
+                val ent = entrance()
+                placeables.forEachIndexed { slot, placeable ->
+                    val d = slot - focus
+                    val weight = shelfWeight(d) * crest(ent)
+                    val origin = shelfOrigin(cover, body, weight)
+                    val assembly = shelfAssemblyOffset(d, ent, viewport, pitch)
+                    placeable.place(
+                        (startX + d * pitch + origin.x + assembly.x).roundToInt(),
+                        (shelfRailY(d) + origin.y + assembly.y).roundToInt(),
                     )
-                }
-
-                if (count > 1) {
-                    Row(
-                        Modifier.fillMaxWidth().widthIn(max = 520.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        IconButton(onClick = { step(-1) }, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                                contentDescription = "上一份档案",
-                                modifier = Modifier.size(15.dp),
-                            )
-                        }
-                        Text(
-                            "${(focusedIndex + 1).toString().padStart(2, '0')} / " +
-                                count.toString().padStart(2, '0'),
-                            style = CodeTextStyle,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        IconButton(onClick = { step(1) }, modifier = Modifier.size(32.dp)) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                contentDescription = "下一份档案",
-                                modifier = Modifier.size(15.dp),
-                            )
-                        }
-                    }
                 }
             }
         }
     }
+}
+
+/** The 720 ms assembly: each book slides in from depth, in reading order. */
+private fun shelfAssemblyOffset(
+    distance: Float,
+    entrance: Float,
+    viewport: Float,
+    pitch: Float,
+): Offset {
+    if (entrance >= 1f) return Offset.Zero
+    val order = (distance + viewport / pitch / 2f + 2f).coerceIn(0f, 16f)
+    val start = order * 0.018f
+    val progress = easeOutCubic(interval(entrance, start, start + 0.52f))
+    return Offset(
+        ShelfDepthX * 56f * (1f - progress),
+        ShelfDepthY * 56f * (1f - progress),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -468,75 +594,10 @@ private fun Modifier.projectFace(xScale: Float, yShear: Float, dx: Float, dy: Fl
         }
     }
 
-// ---------------------------------------------------------------------------
-// Scene
-// ---------------------------------------------------------------------------
 
-@Composable
-private fun ShelfScene(
-    items: List<ShelfItem>,
-    focus: () -> Float,
-    laneAnchor: Int,
-    entrance: () -> Float,
-    viewport: Float,
-    spine: Float,
-    cover: Float,
-    body: Float,
-    openingSlot: Int?,
-    opening: () -> Float,
-    onTapSlot: (Int, Rect) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val count = items.size
-    val startX = viewport / 2f - shelfFootprint(spine, cover) / 2f + shelfPull(cover) * ShelfDepthX
-    val pitch = shelfPitch(viewport)
-
-    // A window of lanes around the centre, not the bare item list: the bank is a loop, so books
-    // to the left of the first file are the last files, and the extracted one is always centred.
-    // Enough lanes to cover the viewport on both sides: 19 on a phone, more on a wide canvas.
-    // A fixed ±9 left gaps at the edges of a 520 dp window.
-    val halfLanes = (ceil(viewport / pitch / 2f).toInt() + 2).coerceIn(6, 14)
-    val activeSlots = remember(laneAnchor, count, halfLanes) {
-        if (count < 2) listOf(0) else ((laneAnchor - halfLanes)..(laneAnchor + halfLanes)).toList()
-    }
-
-    Box(
-        modifier
-            .clipToBounds(),
-    ) {
-        // Floor shadows first: every file casts one, then the solids are stacked on top.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBehind {
-                    val book = focus()
-                    activeSlots.forEach { slot ->
-                        val d = slot - book
-                        val weight = shelfWeight(d) * crest(entrance())
-                        val origin = shelfOrigin(cover, body, weight)
-                        val x = startX + slot * pitch + origin.x
-                        val y = shelfRailY(d) + shelfBaseY(cover, body) + body
-                        drawShelfFloor(x, y, spine, cover)
-                    }
-                },
-        )
-
-        activeSlots.forEach { slot ->
-            ShelfVolume(
-                item = items[Math.floorMod(slot, count)],
-                slot = slot,
-                focus = focus,
-                entrance = entrance,
-                viewport = viewport,
-                spine = spine,
-                cover = cover,
-                body = body,
-                isOpening = slot == openingSlot,
-                opening = opening,
-                onTap = { bounds -> onTapSlot(slot, bounds) },
-            )
-        }
-    }
+/** Root-space bounds of a volume, written from layout without touching the snapshot system. */
+private class ShelfBounds {
+    var rect: Rect = Rect.Zero
 }
 
 private fun crest(entrance: Float): Float =
@@ -545,10 +606,7 @@ private fun crest(entrance: Float): Float =
 @Composable
 private fun ShelfVolume(
     item: ShelfItem,
-    slot: Int,
-    focus: () -> Float,
-    entrance: () -> Float,
-    viewport: Float,
+    number: Int,
     spine: Float,
     cover: Float,
     body: Float,
@@ -556,17 +614,16 @@ private fun ShelfVolume(
     opening: () -> Float,
     onTap: (Rect) -> Unit,
 ) {
-    var bounds by remember { mutableStateOf(Rect.Zero) }
+    // A plain holder, not a MutableState: publishing root bounds through state would recompose
+    // every volume on every frame of a drag, which is exactly the cost the pooled row avoids.
+    val bounds = remember { ShelfBounds() }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val surface = if (dark) Color(0xFF2D2D2D) else Color(0xFFF2F0E9)
     val milk = if (dark) Color(0xFF242424) else Color(0xFFFEFDF8)
     val ink = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    val startX = viewport / 2f - shelfFootprint(spine, cover) / 2f + shelfPull(cover) * ShelfDepthX
-    val pitch = shelfPitch(viewport)
     val density = LocalDensity.current
     val context = LocalContext.current
-    val number = Math.floorMod(slot, 1000) + 1
     // The vertical spine title is a layout-only string; rebuilding it on every drag frame was
     // pure waste, so it is pinned to the book rather than to the slot.
     val spineTitle = remember(item.id, item.title) {
@@ -591,25 +648,6 @@ private fun ShelfVolume(
     Box(
         Modifier
             .size((shelfFootprint(spine, cover) + 8f).dp, (body + 8f).dp)
-            .offset {
-                val d = slot - focus()
-                val weight = shelfWeight(d) * crest(entrance())
-                val origin = shelfOrigin(cover, body, weight)
-                val order = (d + viewport / pitch / 2f + 2f).coerceIn(0f, 16f)
-                val assembly = if (entrance() >= 1f) {
-                    Offset.Zero
-                } else {
-                    val start = order * 0.018f
-                    val progress = easeOutCubic(interval(entrance(), start, start + 0.52f))
-                    Offset(
-                        ShelfDepthX * 56f * (1f - progress),
-                        ShelfDepthY * 56f * (1f - progress),
-                    )
-                }
-                val x = startX + slot * pitch + origin.x + assembly.x
-                val y = shelfRailY(d) + origin.y + assembly.y
-                IntOffset((x * density.density).roundToInt(), (y * density.density).roundToInt())
-            }
             .graphicsLayer {
                 val p = if (isOpening) opening() else 0f
                 if (p > 0f) {
@@ -630,8 +668,8 @@ private fun ShelfVolume(
                 .background(milk)
                 // Only the cover publishes bounds: the spine shares them so a tap on the spine
                 // flies the same rectangle, instead of a 15 dp strip stretching to the dossier.
-                .onGloballyPositioned { bounds = it.boundsInRoot() }
-                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds) },
+                .onGloballyPositioned { bounds.rect = it.boundsInRoot() }
+                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds.rect) },
         ) {
             Column(
                 Modifier.fillMaxSize().padding(start = 10.dp, end = 10.dp, top = 9.dp, bottom = 8.dp),
@@ -672,7 +710,7 @@ private fun ShelfVolume(
                 .size(spine.dp, body.dp)
                 .projectFace(1f, 0.10f, 0f, 0f)
                 .background(surface)
-                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds) },
+                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds.rect) },
         ) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 9.dp),
