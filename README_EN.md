@@ -26,7 +26,10 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   authors / tags to a search, and results page in as you scroll
 - 📚 **Native reader** — vertical / horizontal paging, chapter switching, progress slider,
   automatic **image de-scrambling** (some album pages are served with reversed horizontal
-  strips; this app restores them)
+  strips; this app restores them). Reading tools: tap the left third to go back, the right third
+  to go forward and the middle to hide the bars; volume / arrow keys turn the page; pinch to zoom
+  (double-tap resets); long-press saves the panel to `Pictures/JMReader`; per-page bookmarks with a
+  jump list; auto-scroll in vertical mode; tap the title to reopen the album
 - 🌐 **Trilingual UI** — 简体中文 / 繁體中文 / English, switchable any time
 - ⬇️ **One-tap download** — download a whole album (all chapters, all pages) as plain,
   de-scrambled JPEGs into `Downloads/JMReader/<albumId>/` on your device:
@@ -43,19 +46,25 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   3 dp covers / 4 dp panels, 1 px hairlines, 9 sp monospace file codes (`JM-123456`), and a solid
   ink masthead block with a 4 dp section square - a printed catalogue rather than a feed. Glass
   survives only in the floating dock; the canvas is paper with a 48 dp registration grid. The dark
-  theme is neutral graphite
+  theme is neutral graphite. Home, library and the **detail page** (a work dossier: mounted cover
+  plate, ledger numbers, numbered chapter rows) share the language, so opening a book from the
+  shelf no longer switches dialect
 - 🎨 **"Ink & ember" (optional)** — the previous look is still here: near-black canvas with a single
   ember accent, 12/16/24 dp surfaces and a warm glow. Switch it under "Me → Appearance"; archive is
   the default and the choice is remembered
 - 📚 **Stacked shelf** — favourites and downloads open on a bank of spines: the books stand in a
   row, and only the centred one is pulled forward to show its cover and name. Drag book by book
-  with inertia, snap and a haptic tick when it settles. Neighbours follow the reference's
-  `railY(d) = 2.5d + 0.45d²` rise and a slight `rotationY`, so it reads as a physical wall of books
-  rather than a cover banner. **The bank is a header: the normal grid / list stays below**, and
+  with inertia, snap and a haptic tick when it settles. The bank is not a row of rotated cards:
+  each book is a parallel projection (`depthX 0.66`, `depthY −0.30`) of a cover face, a spine face
+  and a top face, and the weight `w = cos²(|d| / 1.48 · π/2)` drives both the pull-out
+  `0.84·cover·w·(1.24 − 0.24w)` and the lift. Neighbours follow `railY(d) = 2.5d + 0.45d²`, and the
+  lanes wrap around, so it reads as a physical wall of books rather than a cover banner. The bank
+  assembles from depth over 720 ms. **The bank is a header: the normal grid / list stays below**, and
   history keeps its plain list. The button beside the title switches the bank off, and remembers
 - 🎞️ **Motion** — the reference project's vocabulary: 120 ms press dip, 420 ms release with a
-  `cubic-bezier(.2,1.08,.34,1)` overshoot plus a light haptic; routes enter in 420 ms (a twelfth of
-  the width + fade) and leave in 320 ms (fade only); masthead, carousel and quick actions stagger in
+  `cubic-bezier(.2,1.08,.34,1)` overshoot plus a light haptic; routes enter in 420 ms as a full-width
+  slide from the right while the old page gives up only a third and stays underneath, and returns
+  are symmetric - the parallax is what makes the stack read as paper; masthead, carousel and quick actions stagger in
   at 45 ms intervals, capped at eight bands. All of it is `graphicsLayer` alpha + 8 dp of travel, so
   it repaints without relayout
 - 🧭 **Back without losing your place** — home, the weekly chart, category lists and search keep
