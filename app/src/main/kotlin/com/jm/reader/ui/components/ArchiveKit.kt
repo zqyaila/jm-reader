@@ -45,7 +45,15 @@ import com.jm.reader.ui.theme.glassClickable
  * fill and no shadow on content surfaces - covers are the only saturated rectangle on screen.
  */
 
-/** 9 sp monospace file address, optionally inverted into a solid ink block. */
+/**
+ * Monospace file address, optionally inverted into a solid ink plaque.
+ *
+ * The plaque's foreground is `onPrimary`, not `background`: it is the scheme's own definition of
+ * "content drawn on a solid ink fill", and it stays legible in every theme. Using `background`
+ * relied on the two happening to be opposites; where they are close the address vanishes into the
+ * block. A hairline around the block keeps its edge readable on paper of any tone, and the address
+ * is set a point larger than a plain code so it survives being the smallest line on the page.
+ */
 @Composable
 fun ArchiveCode(
     text: String,
@@ -54,21 +62,27 @@ fun ArchiveCode(
     color: Color? = null,
 ) {
     val tint = color ?: if (inverse) {
-        MaterialTheme.colorScheme.background
+        MaterialTheme.colorScheme.onPrimary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     val label = Text(
         text = text,
-        style = CodeTextStyle,
+        style = if (inverse) {
+            CodeTextStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        } else {
+            CodeTextStyle
+        },
         color = tint,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
-        modifier = if (inverse) Modifier.padding(horizontal = 6.dp, vertical = 3.dp) else Modifier,
+        modifier = if (inverse) Modifier.padding(horizontal = 7.dp, vertical = 4.dp) else Modifier,
     )
     if (inverse) {
         Box(
-            modifier.background(MaterialTheme.colorScheme.onSurface),
+            modifier
+                .background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(2.dp))
+                .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)),
             contentAlignment = Alignment.Center,
         ) {
             label
