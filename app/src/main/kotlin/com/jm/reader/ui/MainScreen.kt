@@ -1,14 +1,21 @@
 package com.jm.reader.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -28,12 +35,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
@@ -58,7 +74,9 @@ import com.jm.reader.ui.theme.GlassCapsule
 import com.jm.reader.ui.theme.GlassKind
 import com.jm.reader.ui.theme.GlassSizes
 import com.jm.reader.ui.theme.glassClickable
+import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** Vertical space the floating navigation pill occupies, reserved by scrolling content. */
 val BottomNavReserve = 96.dp
@@ -109,12 +127,14 @@ fun MainScreen(navController: NavHostController) {
 }
 
 /**
- * Floating glass pill with a sliding selection indicator (spring, damped).
+ * The reference's floating dock, ported.
  *
- * Refactor notes: the indicator used to be a *solid accent pill* behind the whole tab, which made
- * the bar the loudest thing on screen and left the selected label fighting a saturated orange
- * field. It is now a 14% accent wash with an accent icon/label - the bar recedes, the selected tab
- * is still unmistakable.
+ * A fixed capsule of four 62 dp bays in which every destination keeps its icon *and* its label.
+ * The previous version captioned only the selected tab, which read as a toolbar rather than as the
+ * dock Wenku8 ships. Selection is a continuous position, not a boolean: the caption turns bold,
+ * the tint lerps toward ink as the bay approaches the finger, and a 12 x 1.5 dp rule under it
+ * fades in with proximity. Dragging across the capsule previews the target and commits on release;
+ * the whole capsule dips for 120 ms on contact, the same press language as the rest of the app.
  */
 @Composable
 private fun GlassBottomNav(
@@ -124,63 +144,111 @@ private fun GlassBottomNav(
     modifier: Modifier = Modifier,
 ) {
     val s = LocalAppStrings.current
-    val accent = MaterialTheme.colorScheme.primary
-    val idle = MaterialTheme.colorScheme.onSurfaceVariant
-    // Archive marks the active tab with a solid ink block (the masthead's brand block inverted);
-    // ember keeps the softer 14 % wash it was tuned with.
-    val archive = LocalAppTheme.current == AppTheme.ARCHIVE
-    val indicator = if (archive) accent else accent.copy(alpha = 0.14f)
-    val activeTint = if (archive) MaterialTheme.colorScheme.onPrimary else accent
     val items = listOf(
         s.home to Icons.Filled.Home,
         s.categories to Icons.Filled.Category,
         s.library to Icons.Filled.LibraryBooks,
         s.member to Icons.Filled.Person,
     )
+    val n = items.size
+    val idle = MaterialTheme.colorScheme.onSurfaceVariant
+    val accent = MaterialTheme.colorScheme.primary
+    val ink = MaterialTheme.colorScheme.onSurface
+    val itemWidth = 62.dp
+    val itemWidthPx = with(LocalDensity.current) { itemWidth.toPx() }
+
+    val position = remember { Animatable(selected.toFloat()) }
+    var pressed by remember { mutableStateOf(false) }
+    var dragging by remember { mutableStateOf(false) }
+    // The gesture detector runs in a restricted coroutine scope and may not call `snapTo`, so the
+    // finger writes a plain float and the animation follows it once the drag ends.
+    var dragValue by remember { mutableFloatStateOf(selected.toFloat()) }
+    val scope = rememberCoroutineScope()
+    val press by animateFloatAsState(
+        targetValue = if (pressed) 1f else 0f,
+        animationSpec = tween(120),
+        label = "dockPress",
+    )
+
+    LaunchedEffect(selected) {
+        if (!dragging) {
+            position.animateTo(
+                targetValue = selected.toFloat(),
+                animationSpec = spring(dampingRatio = 0.78f, stiffness = 420f),
+            )
+        }
+    }
 
     GlassBar(
-        modifier = modifier,
-        // Spec: bars and buttons are capsules, not rounded rectangles.
+        modifier = modifier
+            .width(itemWidth * n + 12.dp)
+            .height(54.dp)
+            .graphicsLayer {
+                translationY = -press * 0.6.dp.toPx()
+                scaleX = 1f + press * 0.022f
+                scaleY = 1f + press * 0.065f
+            },
         shape = GlassCapsule,
-        // Content scrolls underneath this bar, so it uses the densest fog.
         kind = GlassKind.BottomBar,
         backdropLayer = backdropLayer,
     ) {
         BoxWithConstraints(
             Modifier
-                .fillMaxWidth()
-                .height(GlassSizes.BottomBarHeight)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .fillMaxSize()
+                .padding(horizontal = 6.dp, vertical = 3.dp)
+                .pointerInput(n) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        pressed = true
+                        var dragged = false
+                        var lastX = down.position.x
+                        do {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            lastX = change.position.x
+                            if (!dragged && abs(lastX - down.position.x) > viewConfiguration.touchSlop) {
+                                dragged = true
+                                dragging = true
+                            }
+                            if (dragged) {
+                                dragValue = ((lastX / itemWidthPx) - 0.5f).coerceIn(0f, (n - 1).toFloat())
+                                change.consume()
+                            }
+                        } while (event.changes.any { it.pressed })
+
+                        pressed = false
+                        if (dragged) {
+                            val target = dragValue.roundToInt().coerceIn(0, n - 1)
+                            dragging = false
+                            scope.launch {
+                                // Follow the finger from where it let go, then settle on the
+                                // nearest bay. Snapping to the integer first would jump by up to
+                                // half a bay before the spring even started.
+                                position.snapTo(dragValue)
+                                position.animateTo(
+                                    targetValue = target.toFloat(),
+                                    animationSpec = spring(dampingRatio = 0.78f, stiffness = 420f),
+                                )
+                                onSelect(target)
+                            }
+                        } else {
+                            onSelect((down.position.x / itemWidthPx).toInt().coerceIn(0, n - 1))
+                        }
+                    }
+                },
         ) {
-            val itemWidth = maxWidth / items.size
-            val position by animateFloatAsState(
-                targetValue = selected.toFloat(),
-                animationSpec = AppMotion.spatialFast,
-                label = "navIndicator",
-            )
-
-            Box(
-                Modifier
-                    .offset { IntOffset((position * itemWidth.toPx()).roundToInt(), 0) }
-                    .width(itemWidth)
-                    .height(GlassSizes.BottomTabHeight)
-                    .padding(horizontal = 6.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(indicator),
-            )
-
-            Row(
-                Modifier.fillMaxWidth().height(GlassSizes.BottomTabHeight),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Row(Modifier.fillMaxSize()) {
                 items.forEachIndexed { index, (label, icon) ->
+                    // Distance from the *live* position, so the colours slide with the finger
+                    // instead of snapping one bay at a time.
+                    val live = if (dragging) dragValue else position.value
+                    val proximity = (1f - abs(live - index)).coerceIn(0f, 1f)
+                    val tint = lerp(idle, accent, proximity)
                     val active = index == selected
-                    val tint = if (active) activeTint else idle
                     Column(
                         Modifier
                             .width(itemWidth)
-                            .height(GlassSizes.BottomTabHeight)
-                            .glassClickable(shape = MaterialTheme.shapes.small, onClick = { onSelect(index) }),
+                            .fillMaxHeight(),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
@@ -188,30 +256,27 @@ private fun GlassBottomNav(
                             icon,
                             contentDescription = label,
                             tint = tint,
-                            // 24dp: Material icons are drawn on a 24dp grid.
-                            modifier = Modifier.size(23.dp),
+                            modifier = Modifier.size(20.dp),
                         )
-                        // The reference dock labels only the selected tab: three captions under
-                        // three icons turn a floating pill into a second toolbar.
-                        androidx.compose.animation.AnimatedVisibility(
-                            visible = active,
-                            enter = androidx.compose.animation.fadeIn(
-                                androidx.compose.animation.core.tween(ArchiveMotion.ContactMs),
-                            ) + androidx.compose.animation.expandVertically(),
-                            exit = androidx.compose.animation.fadeOut(
-                                androidx.compose.animation.core.tween(ArchiveMotion.ExitMs),
-                            ),
-                        ) {
-                            Text(
-                                label,
-                                fontSize = 10.sp,
-                                lineHeight = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = tint,
-                                maxLines = 1,
-                                modifier = Modifier.padding(top = 1.dp),
-                            )
-                        }
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            label,
+                            // Four bays at 62 dp leave ~54 dp of text; "Categories" at 11 sp
+                            // overflows, so long captions drop half a point instead of clipping.
+                            fontSize = if (label.length > 6) 9.5.sp else 10.5.sp,
+                            lineHeight = 12.sp,
+                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                            color = tint,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Box(
+                            Modifier
+                                .width(12.dp)
+                                .height(1.5.dp)
+                                .background(ink.copy(alpha = proximity)),
+                        )
                     }
                 }
             }
