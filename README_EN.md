@@ -71,19 +71,27 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   a fixed pool, as in the reference: `count + 2 x edgeSlots` volumes are mounted once, each slot
   always holding the same book, and scrolling only moves a wrapped `logicalFocus`. Crossing the
   last book is pixel-identical to crossing any other lane - nothing is inserted, remeasured or
-  remounted - so a long flick can neither drift nor flash. Tap a cover or a spine to open it: the cover itself
-  flies to the dossier's cover plate (300 ms, with the shelf dimming underneath) while the detail
-  page fades and settles in beneath it, so the hand-off reads as one movement rather than a flight
-  followed by a page change; an off-centre tap centres its book first. Covers are
+  remounted - so a long flick can neither drift nor flash. Tap a cover or a spine to open it: the
+  cover leaves the shelf straight (the bounds taken are its unsheared layout rect), disappears from
+  the pool - as the reference's Hero hands its source child to the overlay - and travels to the
+  dossier's plate on the same 420 ms clock as the page exchange. The plate it lands on loads the
+  same URL at the same decoded width, so the hand-off re-decodes nothing and never flashes a grey
+  block; an off-centre tap centres its book first. Covers are
   decoded at their drawn size, so dragging no longer re-decodes full-resolution art. The bank
   assembles from depth over 720 ms. **The bank is a header: the normal grid / list stays below**, and
   history keeps its plain list. The button beside the title switches the bank off, and remembers
 - 🎞️ **Motion** — the reference project's vocabulary: 120 ms press dip, 420 ms release with a
-  `cubic-bezier(.2,1.08,.34,1)` overshoot plus a light haptic; routes enter in 420 ms as a full-width
-  slide from the right while the old page gives up only a third and stays underneath, and returns
-  are symmetric - the parallax is what makes the stack read as paper; masthead, carousel and quick actions stagger in
-  at 45 ms intervals, capped at eight bands. All of it is `graphicsLayer` alpha + 8 dp of travel, so
-  it repaints without relayout
+  `cubic-bezier(.2,1.08,.34,1)` overshoot plus a light haptic. **The dossier is neither faded in nor
+  slid in**: the new page is a sheet cut in from the left along a diagonal edge (46% of the width,
+  capped at 180 dp) while it settles from 24 dp left / 12 dp down, on `cubic-bezier(.18,.72,.18,1)`,
+  fully opaque the whole way; the old page gives up 10 px and stays underneath to be covered. No
+  cross-fade means crisp text at every frame and no two translucent pages stacked into mush. The
+  route's own `enterTransition` is a zero-offset placeholder that only occupies the same 420 ms
+  clock; the cut and the translation happen in the draw phase (`clipPath` + `graphicsLayer`), so the
+  page is laid out once and the transition only repaints. Every other route keeps the paper stack:
+  420 ms in from the right, a third-width retreat for the old page (320 ms), symmetric on return;
+  masthead, carousel and quick actions stagger in at 45 ms intervals, capped at eight bands - all
+  `graphicsLayer`, so it repaints without relayout
 - 🧭 **Back without losing your place** — home, the weekly chart, category lists and search keep
   their items and scroll position in a ViewModel owned by their `NavBackStackEntry`, so opening a
   comic and coming back leaves you exactly where you were instead of reloading page one
