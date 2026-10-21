@@ -241,7 +241,8 @@ private fun FavoritesList(
                             id = it.id,
                             title = it.name,
                             subtitle = it.author.orEmpty(),
-                            cover = it.image.ifBlank { repo.comicCover(it.id, it.updateAt) },
+                            cover = it.image.takeIf { url -> url.startsWith("http") }
+                                ?: repo.comicCover(it.id, it.updateAt),
                         )
                     },
                     onOpen = { navController.navigate(Routes.comicDetail(it.id)) },

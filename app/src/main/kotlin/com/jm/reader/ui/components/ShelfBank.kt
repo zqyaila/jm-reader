@@ -8,11 +8,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -55,12 +53,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -79,7 +78,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -126,6 +127,10 @@ fun ShelfBank(
     val reduceMotion = !motion
 
     var focus by remember { mutableFloatStateOf(0f) }
+    // The cover lifts for 160 ms before the route slides in, so the tap reads as "taking the book
+    // off the shelf" rather than as the page swapping under the finger.
+    var openingSlot by remember { mutableStateOf<Int?>(null) }
+    val opening = remember { Animatable(0f) }
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var lastDetent by remember { mutableIntStateOf(0) }
 
@@ -138,6 +143,23 @@ fun ShelfBank(
         }
     }
 
+    /**
+     * Pulls an unbounded focus back into `0 until count` once a gesture has finished.
+     *
+     * The bank is a loop, so `focus = focus ± count` is the same picture: every lane maps back
+     * through `floorMod`. Re-seating it keeps the float from drifting (a long fling can cross
+     * hundreds of books) and keeps the lane window near zero, which is what makes the loop feel
+     * endless instead of running out of precision or slots.
+     */
+    fun reseat() {
+        if (count <= 0) return
+        val wrapped = shelfWrapFocus(focus, count)
+        if (abs(wrapped - focus) > 0.0001f) {
+            focus = wrapped
+            lastDetent = wrapped.roundToInt()
+        }
+    }
+
     fun settle(velocityDp: Float, pitchDp: Float) {
         if (count < 2) return
         flingJob?.cancel()
@@ -147,6 +169,7 @@ fun ShelfBank(
                     targetValue = focus.roundToInt().toFloat(),
                     animationSpec = spring(dampingRatio = 0.86f, stiffness = 320f),
                 ) { focus = value }
+                reseat()
                 return@launch
             }
             val anim = Animatable(focus)
@@ -158,6 +181,7 @@ fun ShelfBank(
                 targetValue = anim.value.roundToInt().toFloat(),
                 animationSpec = spring(dampingRatio = 0.82f, stiffness = 300f),
             ) { focus = value }
+            reseat()
         }
     }
 
@@ -173,6 +197,7 @@ fun ShelfBank(
                     easing = CubicBezierEasing(0.2f, 1.06f, 0.35f, 1f),
                 ),
             ) { focus = value }
+            reseat()
         }
     }
 
@@ -203,9 +228,29 @@ fun ShelfBank(
                         spine = spine,
                         cover = cover,
                         body = body,
+                        openingSlot = openingSlot,
+                        opening = { opening.value },
                         onTapSlot = { slot ->
-                            if (abs(slot - focus) < 0.4f) {
-                                onOpen(items[Math.floorMod(slot, count)])
+                            if (abs(slot - focus) < 0.35f) {
+                                val book = items[Math.floorMod(slot, count)]
+                                if (openingSlot == null) {
+                                    openingSlot = slot
+                                    scope.launch {
+                                        opening.animateTo(
+                                            targetValue = 1f,
+                                            animationSpec = tween(
+                                                durationMillis = 160,
+                                                easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f),
+                                            ),
+                                        )
+                                        // Reset before navigating: the composition may be kept
+                                        // alive by the back stack, and a stale lift would leave
+                                        // the book scaled up when the user comes back.
+                                        openingSlot = null
+                                        opening.snapTo(0f)
+                                        onOpen(book)
+                                    }
+                                }
                             } else {
                                 step((slot - focus).roundToInt())
                             }
@@ -326,6 +371,15 @@ internal fun shelfPull(cover: Float): Float = cover * 0.84f
 internal fun shelfBaseY(cover: Float, height: Float): Float = -cover * ShelfDepthY + height * 0.60f + 12f
 internal fun shelfRowHeight(cover: Float, height: Float): Float = shelfBaseY(cover, height) + height + 60f
 
+/**
+ * Maps an unbounded lane coordinate into `0 until count`.
+ *
+ * The bank repeats every [count] lanes, so subtracting whole laps is invisible - and it is what
+ * lets a fling of fifty books end on the same picture a fling of zero would.
+ */
+internal fun shelfWrapFocus(value: Float, count: Int): Float =
+    if (count <= 0) value else ((value % count) + count) % count
+
 internal fun shelfRailY(distance: Float): Float {
     val d = distance.coerceIn(-7f, 7f)
     return d * 2.5f + d * d * 0.45f
@@ -393,6 +447,8 @@ private fun ShelfScene(
     spine: Float,
     cover: Float,
     body: Float,
+    openingSlot: Int?,
+    opening: () -> Float,
     onTapSlot: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -404,26 +460,16 @@ private fun ShelfScene(
     val laneAnchor by remember { derivedStateOf { focus().roundToInt() } }
     // A window of lanes around the centre, not the bare item list: the bank is a loop, so books
     // to the left of the first file are the last files, and the extracted one is always centred.
-    val activeSlots = remember(laneAnchor, count) {
-        if (count < 2) listOf(0) else ((laneAnchor - 9)..(laneAnchor + 9)).toList()
+    // Enough lanes to cover the viewport on both sides: 19 on a phone, more on a wide canvas.
+    // A fixed ±9 left gaps at the edges of a 520 dp window.
+    val halfLanes = (ceil(viewport / pitch / 2f).toInt() + 2).coerceIn(6, 14)
+    val activeSlots = remember(laneAnchor, count, halfLanes) {
+        if (count < 2) listOf(0) else ((laneAnchor - halfLanes)..(laneAnchor + halfLanes)).toList()
     }
-    val slotsRef by rememberUpdatedState(activeSlots)
 
     Box(
         modifier
-            .clipToBounds()
-            .pointerInput(count, spine, cover, body, viewport) {
-                detectShelfTap(
-                    spine = spine,
-                    cover = cover,
-                    body = body,
-                    startX = startX,
-                    pitch = pitch,
-                    focus = focus,
-                    slots = { slotsRef },
-                    onTapSlot = onTapSlot,
-                )
-            },
+            .clipToBounds(),
     ) {
         // Floor shadows first: every file casts one, then the solids are stacked on top.
         Box(
@@ -452,6 +498,9 @@ private fun ShelfScene(
                 spine = spine,
                 cover = cover,
                 body = body,
+                isOpening = slot == openingSlot,
+                opening = opening,
+                onTap = { onTapSlot(slot) },
             )
         }
     }
@@ -470,6 +519,9 @@ private fun ShelfVolume(
     spine: Float,
     cover: Float,
     body: Float,
+    isOpening: Boolean,
+    opening: () -> Float,
+    onTap: () -> Unit,
 ) {
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val surface = if (dark) Color(0xFF2D2D2D) else Color(0xFFF2F0E9)
@@ -479,14 +531,27 @@ private fun ShelfVolume(
     val startX = viewport / 2f - shelfFootprint(spine, cover) / 2f + shelfPull(cover) * ShelfDepthX
     val pitch = shelfPitch(viewport)
     val density = LocalDensity.current
-    val number = Math.floorMod(slot, 100000)
-    val glyphs = item.title.take(7).map { it.toString() }
-    val spineTitle = buildString {
-        glyphs.forEachIndexed { index, glyph ->
-            if (index > 0) append('\n')
-            append(glyph)
+    val context = LocalContext.current
+    val number = Math.floorMod(slot, 1000) + 1
+    // The vertical spine title is a layout-only string; rebuilding it on every drag frame was
+    // pure waste, so it is pinned to the book rather than to the slot.
+    val spineTitle = remember(item.id, item.title) {
+        buildString {
+            item.title.take(7).forEachIndexed { index, glyph ->
+                if (index > 0) append('\n')
+                append(glyph)
+            }
+            if (item.title.length > 7) append("…")
         }
-        if (item.title.length > 7) append("…")
+    }
+    // Decode at the size actually drawn (≈115 dp wide). Full-resolution covers are 2-3x that,
+    // and nineteen of them per frame is what made the drag stutter on mid-range phones.
+    val coverPx = with(density) { cover.dp.roundToPx() }
+    val coverRequest = remember(item.cover, coverPx) {
+        ImageRequest.Builder(context)
+            .data(item.cover)
+            .size(coverPx, (coverPx * 1.4f).roundToInt())
+            .build()
     }
 
     Box(
@@ -510,6 +575,15 @@ private fun ShelfVolume(
                 val x = startX + slot * pitch + origin.x + assembly.x
                 val y = shelfRailY(d) + origin.y + assembly.y
                 IntOffset((x * density.density).roundToInt(), (y * density.density).roundToInt())
+            }
+            .graphicsLayer {
+                val p = if (isOpening) opening() else 0f
+                if (p > 0f) {
+                    transformOrigin = TransformOrigin(0.35f, 0.7f)
+                    scaleX = 1f + 0.05f * p
+                    scaleY = 1f + 0.05f * p
+                    alpha = 1f - 0.12f * p
+                }
             },
     ) {
         // Front cover: receding up-right by the projection, carrying the file address at top and
@@ -519,7 +593,8 @@ private fun ShelfVolume(
                 .offset(x = spine.dp, y = (spine * 0.10f).dp)
                 .size(cover.dp, body.dp)
                 .projectFace(ShelfDepthX, ShelfDepthY, 0f, 0f)
-                .background(milk),
+                .background(milk)
+                .glassClickable(shape = RoundedCornerShape(0.dp), onClick = onTap),
         ) {
             Column(
                 Modifier.fillMaxSize().padding(start = 10.dp, end = 10.dp, top = 9.dp, bottom = 8.dp),
@@ -538,10 +613,7 @@ private fun ShelfVolume(
                         .background(if (dark) Color(0xFF1E1E1E) else Color(0xFFEDEAE1)),
                 ) {
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(item.cover)
-                            .crossfade(180)
-                            .build(),
+                        model = coverRequest,
                         contentDescription = item.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
@@ -562,7 +634,8 @@ private fun ShelfVolume(
             Modifier
                 .size(spine.dp, body.dp)
                 .projectFace(1f, 0.10f, 0f, 0f)
-                .background(surface),
+                .background(surface)
+                .glassClickable(shape = RoundedCornerShape(0.dp), onClick = onTap),
         ) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 9.dp),
@@ -649,42 +722,6 @@ private fun DrawScope.drawShelfFloor(x: Float, y: Float, spine: Float, cover: Fl
             end = Offset(origin.x, origin.y + 10f),
         ),
     )
-}
-
-private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.detectShelfTap(
-    spine: Float,
-    cover: Float,
-    body: Float,
-    startX: Float,
-    pitch: Float,
-    focus: () -> Float,
-    slots: () -> List<Int>,
-    onTapSlot: (Int) -> Unit,
-) {
-    awaitEachGesture {
-        val down = awaitFirstDown(requireUnconsumed = false)
-        val up = waitForUpOrCancellation() ?: return@awaitEachGesture
-        if ((up.position - down.position).getDistance() > 18f) return@awaitEachGesture
-        val point = up.position
-        val book = focus()
-        val hit = slots().lastOrNull { slot ->
-            val d = slot - book
-            val weight = shelfWeight(d)
-            val projection = shelfOrigin(cover, body, weight)
-            val originX = startX + slot * pitch + projection.x
-            val originY = shelfRailY(d) + projection.y
-            // Cover parallelogram: (spine, .1s) + u·(0.66, −0.30)·cover + v·(0, 1)·body.
-            val local = point - Offset(originX + spine, originY + spine * 0.10f)
-            val u = local.x / (cover * ShelfDepthX)
-            val v = (local.y - cover * ShelfDepthY * u) / body
-            val inCover = u in 0f..1f && v in 0f..1f
-            val spineLocal = point - Offset(originX, originY)
-            val sv = (spineLocal.y - spineLocal.x * 0.10f) / body
-            val inSpine = spineLocal.x in 0f..spine && sv in 0f..1f
-            inCover || inSpine
-        }
-        if (hit != null) onTapSlot(hit)
-    }
 }
 
 private fun Color.luminance(): Float {

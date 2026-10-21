@@ -364,7 +364,18 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                                     subtitle = listOfNotNull(it.author, it.category?.title)
                                         .filter { part -> part.isNotBlank() }
                                         .joinToString(" · "),
-                                    cover = it.image,
+                                    // The promote feed does not always carry a cover URL, while
+                                    // the album endpoint always can build one. Without this
+                                    // fallback every slot on the home bank rendered an empty
+                                    // panel - the covers only appeared on the library shelf,
+                                    // which already did this.
+                                    // Only an absolute URL is usable as-is. The promote feed has
+                                    // been seen with an empty `image`, and a relative one would
+                                    // also fail to load; the album endpoint can always build a
+                                    // cover, so fall back to it instead of rendering a blank
+                                    // panel (which is what the home bank did before).
+                                    cover = it.image.takeIf { url -> url.startsWith("http") }
+                                        ?: repo.comicCover(it.id, it.updateAt),
                                 )
                             },
                             onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
