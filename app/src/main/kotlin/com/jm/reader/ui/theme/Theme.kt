@@ -1,10 +1,12 @@
 package com.jm.reader.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Shapes
 import androidx.compose.ui.graphics.Color
@@ -82,7 +84,14 @@ fun JMReaderTheme(
         },
         typography = AppTypography,
         shapes = if (archive) ArchiveShapes else EmberShapes,
-        content = content,
+        content = {
+            // Text without an explicit colour falls back to LocalContentColor, whose default is
+            // black - invisible in the dark theme. Bind it to the scheme once for the whole tree.
+            CompositionLocalProvider(
+                LocalContentColor provides MaterialTheme.colorScheme.onBackground,
+                content = content,
+            )
+        },
     )
 }
 
