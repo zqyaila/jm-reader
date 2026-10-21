@@ -10,6 +10,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -353,6 +354,9 @@ fun GlassBar(
 @Composable
 fun AppBackdrop(modifier: Modifier = Modifier) {
     val dark = isSystemInDarkTheme()
+    // Captured in composition: the inset extension is composable, the painter is not.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val topPx = androidx.compose.foundation.layout.WindowInsets.statusBars.getTop(density).toFloat()
     val archive = LocalAppTheme.current == AppTheme.ARCHIVE
     Box(
         modifier
@@ -360,17 +364,49 @@ fun AppBackdrop(modifier: Modifier = Modifier) {
             .background(backdropBrush())
             .drawBehind {
                 if (archive) {
+                    val topInset = topPx
+                    // The reference bounds its diagram to the header margin: 240 dp of grid, two
+                    // frosted file planes in the same raster, and a pair of registration crosses.
+                    // Below that, the reading canvas stays plain paper.
                     val grid = if (dark) Color.White.copy(alpha = 0.035f) else Color(0xFF181818).copy(alpha = 0.045f)
+                    val bottom = (240.dp.toPx() + topInset).coerceAtMost(size.height)
+                    val filmWhite = if (dark) Color(0xFFF6F6F6) else Color(0xFFFEFDF8)
+                    drawPath(
+                        Path().apply {
+                            moveTo(size.width * 0.42f, topInset)
+                            lineTo(size.width, topInset)
+                            lineTo(size.width, bottom * 0.82f)
+                            lineTo(size.width * 0.78f, bottom * 0.82f)
+                            close()
+                        },
+                        filmWhite.copy(alpha = if (dark) 0.018f else 0.42f),
+                    )
+                    drawPath(
+                        Path().apply {
+                            moveTo(size.width * 0.60f, topInset + 18.dp.toPx())
+                            lineTo(size.width, topInset + 18.dp.toPx())
+                            lineTo(size.width, bottom)
+                            lineTo(size.width * 0.92f, bottom)
+                            close()
+                        },
+                        filmWhite.copy(alpha = if (dark) 0.012f else 0.28f),
+                    )
                     val step = 48.dp.toPx()
                     var x = 24.dp.toPx()
                     while (x < size.width) {
-                        drawLine(grid, Offset(x, 0f), Offset(x, size.height), 0.5.dp.toPx())
+                        drawLine(grid, Offset(x, 0f), Offset(x, bottom), 0.5.dp.toPx())
                         x += step
                     }
-                    var y = 24.dp.toPx()
-                    while (y < size.height) {
-                        drawLine(grid, Offset(0f, y), Offset(size.width, y), 0.5.dp.toPx())
+                    var y = topInset + 4.dp.toPx()
+                    while (y < bottom) {
+                        drawLine(grid, Offset(24.dp.toPx(), y), Offset(size.width - 24.dp.toPx(), y), 0.5.dp.toPx())
                         y += step
+                    }
+                    val cross = (if (dark) Color(0xFFF6F6F6) else Color(0xFF181818)).copy(alpha = 0.15f)
+                    val crossY = topInset + 60.dp.toPx()
+                    listOf(24.dp.toPx(), size.width - 24.dp.toPx()).forEach { cx ->
+                        drawLine(cross, Offset(cx - 3.dp.toPx(), crossY), Offset(cx + 3.dp.toPx(), crossY), 0.5.dp.toPx())
+                        drawLine(cross, Offset(cx, crossY - 3.dp.toPx()), Offset(cx, crossY + 3.dp.toPx()), 0.5.dp.toPx())
                     }
                 } else {
                     drawRect(

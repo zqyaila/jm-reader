@@ -31,39 +31,37 @@ import com.jm.reader.desktop.core.Session
 // leaves one ember accent, so covers carry the colour.
 // ---------------------------------------------------------------------------
 
-val BrandOrange = Color(0xFFFF8A4C)
-val BrandOrangeDark = Color(0xFFD9601F)
-val BrandOrangeSoft = Color(0xFFFFB37A)
+// Archive palette, identical to the phone build: warm paper, ink, no accent hue at all. The only
+// saturated rectangle on screen is a cover.
+val BrandOrange = Color(0xFF181818)
+val BrandOrangeDark = Color(0xFF181818)
+val BrandOrangeSoft = Color(0xFF646B62)
 
-/** Accent used for text/icons on light surfaces; the bright ember fails contrast on paper. */
-val BrandOrangeDeep = Color(0xFFC2410C)
+/** "Accent" is ink in the light theme and off-white in the dark one. */
+val BrandOrangeDeep = Color(0xFF181818)
 
-val DarkBg = Color(0xFF0C0C0E)
-val DarkSurface = Color(0xFF16161A)
-val DarkSurfaceVariant = Color(0xFF1D1D22)
-val DarkOutline = Color(0xFF2E2E35)
+val DarkBg = Color(0xFF191919)
+val DarkSurface = Color(0xFF242424)
+val DarkSurfaceVariant = Color(0xFF2D2D2D)
+val DarkOutline = Color(0xFF3C3C3C)
 
-val LightBg = Color(0xFFF7F4EF)
-val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFF0EBE3)
-val LightOutline = Color(0xFFE2DCD2)
+val LightBg = Color(0xFFF4F3EF)
+val LightSurface = Color(0xFFFDFCFA)
+val LightSurfaceVariant = Color(0xFFECEAE4)
+val LightOutline = Color(0xFFD8DBD5)
 
-val TextPrimaryDark = Color(0xFFF4F1EC)
-val TextSecondaryDark = Color(0xFFA29C93)
-val TextPrimaryLight = Color(0xFF17130F)
-val TextSecondaryLight = Color(0xFF6B645B)
+val TextPrimaryDark = Color(0xFFF2F2F2)
+val TextSecondaryDark = Color(0xFFB7B7B7)
+val TextPrimaryLight = Color(0xFF181818)
+val TextSecondaryLight = Color(0xFF646B62)
 
 /** Canvas is opaque on purpose: translucent chrome behind every card was the old problem. */
 const val CanvasAlphaDark = 1f
 const val CanvasAlphaLight = 1f
 
 /** Quiet root gradient: one vertical wash, no coloured blobs. */
-val BackdropBrushDark: Brush = Brush.verticalGradient(
-    listOf(Color(0xFF14100F), Color(0xFF0C0C0E), Color(0xFF0B0B0D)),
-)
-val BackdropBrushLight: Brush = Brush.verticalGradient(
-    listOf(Color(0xFFFBF8F3), Color(0xFFF7F4EF), Color(0xFFF2EEE7)),
-)
+val BackdropBrushDark: Brush = Brush.verticalGradient(listOf(DarkBg, DarkBg))
+val BackdropBrushLight: Brush = Brush.verticalGradient(listOf(LightBg, LightBg))
 
 /** Kept for the legacy backdrop helper; no longer painted as shapes. */
 val GlassAccentBlue = Color(0xFF2F80ED)
@@ -72,31 +70,31 @@ val GlassAccentTeal = Color(0xFF00BFA5)
 const val BackdropBlobAlpha = 0.34f
 
 private val DarkColors = darkColorScheme(
-    primary = BrandOrange,
-    onPrimary = Color(0xFF1A0D06),
-    primaryContainer = Color(0xFF3A1D10),
-    onPrimaryContainer = BrandOrangeSoft,
-    secondary = BrandOrangeSoft,
-    onSecondary = Color(0xFF1A0D06),
+    primary = TextPrimaryDark,
+    onPrimary = DarkBg,
+    primaryContainer = DarkSurfaceVariant,
+    onPrimaryContainer = TextPrimaryDark,
+    secondary = TextSecondaryDark,
+    onSecondary = DarkBg,
     background = DarkBg,
     onBackground = TextPrimaryDark,
     surface = DarkSurface,
     onSurface = TextPrimaryDark,
     surfaceVariant = DarkSurfaceVariant,
     onSurfaceVariant = TextSecondaryDark,
-    outline = DarkOutline,
-    outlineVariant = Color(0xFF23232A),
-    error = Color(0xFFFF6B6B),
-    onError = Color(0xFF1A0D06),
+    outline = Color(0xFF7A7A7A),
+    outlineVariant = DarkOutline,
+    error = Color(0xFFFF8A80),
+    onError = DarkBg,
 )
 
 private val LightColors = lightColorScheme(
-    primary = BrandOrangeDeep,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFFFE3D2),
-    onPrimaryContainer = Color(0xFF5A1C00),
-    secondary = BrandOrangeDark,
-    onSecondary = Color.White,
+    primary = TextPrimaryLight,
+    onPrimary = LightSurface,
+    primaryContainer = LightSurfaceVariant,
+    onPrimaryContainer = TextPrimaryLight,
+    secondary = TextSecondaryLight,
+    onSecondary = LightSurface,
     background = LightBg,
     onBackground = TextPrimaryLight,
     surface = LightSurface,
@@ -104,7 +102,7 @@ private val LightColors = lightColorScheme(
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = TextSecondaryLight,
     outline = LightOutline,
-    outlineVariant = Color(0xFFE6E0D6),
+    outlineVariant = LightOutline,
     error = Color(0xFFB3261E),
     onError = Color.White,
 )
@@ -157,9 +155,9 @@ private val AppTypography = Typography(
  * the same numbers so a card has the same proportions on both.
  */
 object AppSizes {
-    val Radius: Dp = 16.dp
-    val RadiusLarge: Dp = 24.dp
-    val RadiusInner: Dp = 12.dp
+    val Radius: Dp = 4.dp
+    val RadiusLarge: Dp = 6.dp
+    val RadiusInner: Dp = 3.dp
     val ContentPadding: Dp = 20.dp
     val CardPadding: Dp = 8.dp
     val BarHeight: Dp = 56.dp

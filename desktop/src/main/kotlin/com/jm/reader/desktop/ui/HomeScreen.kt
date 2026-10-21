@@ -259,8 +259,12 @@ fun HomeScreen(
             )
 
             else -> Column(Modifier.fillMaxSize()) {
-                AppTopBar(
+                // Paper masthead inside the reading column, not a full-width glass bar: the
+                // archive's hierarchy is printed, not floated.
+                ArchiveMasthead(
                     title = s.appName,
+                    code = "01 / DISCOVERY",
+                    modifier = Modifier.padding(horizontal = AppSizes.ContentPadding, vertical = 4.dp),
                     actions = {
                         IconButton(onClick = { scope.launch { loadInitial() } }) {
                             Icon(Icons.Filled.Refresh, contentDescription = s.refresh)
@@ -300,10 +304,24 @@ fun HomeScreen(
 
                     if (promote.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(title = s.forYou)
+                            SectionHeader(title = s.forYou, code = "01 / ARCHIVE")
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            PromoteStrip(repo, promote, onOpenComic)
+                            // The same projected bank as the phone build, centred on a wide window.
+                            ArchiveShelf(
+                                items = promote.take(10).map {
+                                    ShelfItem(
+                                        id = it.id,
+                                        title = it.name,
+                                        subtitle = listOfNotNull(it.author, it.category?.title)
+                                            .filter { part -> part.isNotBlank() }
+                                            .joinToString(" · "),
+                                        cover = it.image,
+                                    )
+                                },
+                                onOpen = { onOpenComic(it.id) },
+                                animateEntrance = true,
+                            )
                         }
                     }
 

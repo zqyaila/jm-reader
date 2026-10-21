@@ -67,6 +67,8 @@ import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
+import com.jm.reader.ui.components.ArchiveMasthead
+import com.jm.reader.ui.components.ArchiveTabs
 import com.jm.reader.ui.components.ShelfBank
 import com.jm.reader.ui.components.ComicGrid
 import com.jm.reader.ui.components.ShelfItem
@@ -124,17 +126,17 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
         // is the glass surface.
         containerColor = Color.Transparent,
         topBar = {
-            GlassBar(Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth()) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            s.library,
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.weight(1f),
-                        )
+            // Paper header, not a glass bar: the archive vocabulary keeps the canvas flat and
+            // carries hierarchy with the masthead's ink block and the tab rule.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 24.dp, end = 12.dp),
+            ) {
+                ArchiveMasthead(
+                    title = s.library,
+                    code = "02 / PERSONAL ARCHIVE",
+                    actions = {
                         IconButton(onClick = { setShelf(!shelf) }) {
                             Icon(
                                 if (shelf) Icons.Filled.ViewList else Icons.Filled.ViewModule,
@@ -142,25 +144,14 @@ fun LibraryScreen(navController: NavHostController, modifier: Modifier = Modifie
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                    }
-                    TabRow(
-                        selectedTabIndex = tab,
-                        containerColor = Color.Transparent,
-                        divider = {},
-                        indicator = { positions ->
-                            if (tab < positions.size) {
-                                TabRowDefaults.SecondaryIndicator(
-                                    Modifier.tabIndicatorOffset(positions[tab]),
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        },
-                    ) {
-                        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(s.favorites) })
-                        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(s.history) })
-                        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(s.downloads) })
-                    }
-                }
+                    },
+                )
+                ArchiveTabs(
+                    labels = listOf(s.favorites, s.history, s.downloads),
+                    selected = tab,
+                    onSelect = { tab = it },
+                    modifier = Modifier.padding(end = 12.dp),
+                )
             }
         },
     ) { padding ->
@@ -244,6 +235,7 @@ private fun FavoritesList(
             items.isEmpty() -> EmptyView(s.emptyFavorites, Modifier.fillMaxSize())
             shelf -> Column(Modifier.fillMaxSize()) {
                 ShelfBank(
+                    modifier = Modifier.padding(horizontal = 12.dp),
                     items = items.map {
                         ShelfItem(
                             id = it.id,

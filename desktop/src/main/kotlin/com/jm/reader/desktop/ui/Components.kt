@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.jm.reader.desktop.core.ComicListItem
 import com.jm.reader.desktop.core.ImageLoader
 import com.jm.reader.desktop.core.JmId
@@ -213,7 +214,7 @@ fun ComicCard(
     rank: Int? = null,
     progress: Float? = null,
 ) {
-    val coverShape = RoundedCornerShape(12.dp)
+    val coverShape = RoundedCornerShape(3.dp)
     Column(modifier = modifier.glassClickable(onClick = onClick, shape = coverShape)) {
         val cover = if (item.image.isNotBlank()) item.image else repo.comicCover(item.id, item.updateAt)
         Box(
@@ -353,20 +354,45 @@ fun StatTile(label: String, value: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** Section heading with an optional trailing action. */
+/**
+ * Section mark in the archive vocabulary: a monospace address over a hairline that ends in a
+ * printed dot, then the heading. The reference's `ArchiveSection`, at desktop sizes.
+ */
 @Composable
-fun SectionHeader(title: String, modifier: Modifier = Modifier, trailing: @Composable () -> Unit = {}) {
-    Row(
-        modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.weight(1f),
-        )
-        trailing()
+fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    code: String? = null,
+    trailing: @Composable () -> Unit = {},
+) {
+    Column(modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
+        if (code != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    code,
+                    style = ArchiveCodeStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(9.dp))
+                Box(
+                    Modifier.weight(1f).height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant),
+                )
+                Spacer(Modifier.width(5.dp))
+                Box(Modifier.size(3.dp).background(MaterialTheme.colorScheme.onSurface))
+            }
+            Spacer(Modifier.height(7.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp,
+                modifier = Modifier.weight(1f),
+            )
+            trailing()
+        }
     }
 }
 
@@ -402,5 +428,59 @@ fun copyToClipboard(text: String) {
     runCatching {
         java.awt.Toolkit.getDefaultToolkit().systemClipboard
             .setContents(java.awt.datatransfer.StringSelection(text), null)
+    }
+}
+
+
+/**
+ * Page masthead: solid ink brand block, the title at 23 sp, the archive address beneath it.
+ * Same component as the phone build; on a wide window it sits at the top of the reading column.
+ */
+@Composable
+fun ArchiveMasthead(
+    title: String,
+    code: String,
+    modifier: Modifier = Modifier,
+    actions: @Composable () -> Unit = {},
+) {
+    Row(
+        modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(width = 30.dp, height = 34.dp)
+                .background(MaterialTheme.colorScheme.onSurface),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "JM",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.7).sp,
+                color = MaterialTheme.colorScheme.surface,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                fontSize = 23.sp,
+                lineHeight = 27.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.7).sp,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                code,
+                style = ArchiveCodeStyle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+        }
+        actions()
     }
 }

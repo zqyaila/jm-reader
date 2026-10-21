@@ -17,13 +17,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.items as listItems
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,11 +84,16 @@ import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalHistoryManager
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalStats
+import com.jm.reader.ui.components.ArchiveBookRow
+import com.jm.reader.ui.components.ArchiveIndexTile
+import com.jm.reader.ui.components.ArchiveTextLink
+import com.jm.reader.ui.components.ArchivePlate
 import com.jm.reader.ui.components.ArchiveReveal
-import com.jm.reader.ui.components.ComicCard
+import com.jm.reader.ui.components.ArchiveSectionHeader
+import com.jm.reader.ui.components.ShelfBank
+import com.jm.reader.ui.components.ShelfItem
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
-import com.jm.reader.ui.components.SectionHeader
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.theme.glassClickable
 import kotlinx.coroutines.async
@@ -302,20 +305,20 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
     // Seed from the last known position so switching tabs (which disposes this composition without
     // a save/restore cycle) does not snap the feed back to the top. When returning from a comic the
     // nav entry's own saved state wins and `init` is ignored, which is the same position anyway.
-    val gridState = rememberLazyGridState(
+    val listState = rememberLazyListState(
         initialFirstVisibleItemIndex = vm.firstVisibleIndex,
         initialFirstVisibleItemScrollOffset = vm.firstVisibleOffset,
     )
-    DisposableEffect(gridState) {
+    DisposableEffect(listState) {
         onDispose {
-            vm.firstVisibleIndex = gridState.firstVisibleItemIndex
-            vm.firstVisibleOffset = gridState.firstVisibleItemScrollOffset
+            vm.firstVisibleIndex = listState.firstVisibleItemIndex
+            vm.firstVisibleOffset = listState.firstVisibleItemScrollOffset
         }
     }
     // Five full-span rows precede the feed: hero, dots, quick links, recent reads, section title.
     val leadingRows = if (recentItems.isEmpty()) 4 else 5
-    LaunchedEffect(gridState, state.latest.size, recentItems.size) {
-        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+    LaunchedEffect(listState, state.latest.size, recentItems.size) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { last ->
                 if (last != null && !state.loading && last >= leadingRows + state.latest.size - 8) {
                     scope.launch { loadMore() }
@@ -329,101 +332,125 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
     Box(modifier = modifier.fillMaxSize()) {
         when {
             state.loading && state.latest.isEmpty() -> LoadingView()
-            state.error != null && state.latest.isEmpty() -> ErrorView(state.error!!, onRetry = { scope.launch { loadInitial() } })
-            else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(100.dp),
+            state.error != null && state.latest.isEmpty() ->
+                ErrorView(state.error!!, onRetry = { scope.launch { loadInitial() } })
+            else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                state = gridState,
+                state = listState,
                 // Bottom reserve lets the last row scroll clear of the floating nav pill.
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = BottomNavReserve),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = BottomNavReserve),
             ) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
+                item(key = "masthead") {
                     ArchiveReveal(index = 0, generation = revealGeneration) {
-                    HomeHeader(
-                        title = s.homeGreeting,
-                        // A catalogue code, not a wordmark: the masthead's second line is the
-                        // archive address, in the same mono style as every cover's JM number.
-                        eyebrow = "JM-READER / 18COMIC",
-                        onSearch = { navController.navigate(Routes.search()) },
-                        onRefresh = { scope.launch { loadInitial() } },
-                    )
+                        HomeHeader(
+                            title = s.homeGreeting,
+                            eyebrow = "JM-READER / 18COMIC",
+                            onSearch = { navController.navigate(Routes.search()) },
+                            onRefresh = { scope.launch { loadInitial() } },
+                        )
                     }
                 }
-                    if (state.promote.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            ArchiveReveal(index = 1, generation = revealGeneration) {
-                            HeroCarousel(
-                                repo = repo,
-                                items = state.promote.take(5),
-                                initialPage = vm.heroIndex,
-                                onPageChanged = { vm.heroIndex = it },
-                                onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
+
+                if (state.promote.isNotEmpty()) {
+                    item(key = "shelf") {
+                        ShelfBank(
+                            items = state.promote.take(10).map {
+                                ShelfItem(
+                                    id = it.id,
+                                    title = it.name,
+                                    subtitle = listOfNotNull(it.author, it.category?.title)
+                                        .filter { part -> part.isNotBlank() }
+                                        .joinToString(" · "),
+                                    cover = it.image,
+                                )
+                            },
+                            onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
+                            animateEntrance = true,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+
+                item(key = "index") {
+                    ArchiveReveal(index = 2, generation = revealGeneration) {
+                        QuickLinks(navController)
+                    }
+                }
+
+                item(key = "dice") {
+                    ArchiveReveal(index = 3, generation = revealGeneration) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            ArchivePlate(
+                                title = s.randomComic,
+                                hint = s.randomHint,
+                                code = "01 / RANDOM",
+                                onClick = { scope.launch { surprise() } },
+                                modifier = Modifier.weight(1f),
+                                trailing = {
+                                    if (randomLoading) {
+                                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.5.dp)
+                                    }
+                                },
                             )
+                            ArchivePlate(
+                                title = s.guessYouLike,
+                                hint = s.guessHint,
+                                code = "02 / GUESS",
+                                onClick = { scope.launch { guess() } },
+                                modifier = Modifier.weight(1f),
+                                trailing = {
+                                    if (guessLoading) {
+                                        CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.5.dp)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+
+                if (recentItems.isNotEmpty()) {
+                    item(key = "recent-header") {
+                        ArchiveSectionHeader(code = "01 / READING LOG", title = s.recentReads)
+                    }
+                    item(key = "recent") {
+                        Column {
+                            recentItems.take(4).forEach { entry ->
+                                ArchiveBookRow(
+                                    id = entry.albumId,
+                                    title = entry.name,
+                                    author = entry.author.orEmpty().ifBlank { "阅读记录" },
+                                    cover = repo.comicCover(entry.albumId, entry.updateAt),
+                                    onClick = { navController.navigate(Routes.comicDetail(entry.albumId)) },
+                                )
                             }
                         }
                     }
+                }
 
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ArchiveReveal(index = 2, generation = revealGeneration) {
-                            QuickLinks(navController)
-                        }
-                    }
+                item(key = "latest-header") {
+                    ArchiveSectionHeader(
+                        code = "02 / CATALOG",
+                        title = s.latest,
+                        actionLabel = s.viewAll,
+                        onAction = { navController.navigate(Routes.comicList("latest", s.latest)) },
+                    )
+                }
 
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ArchiveReveal(index = 3, generation = revealGeneration) {
-                        SurpriseEntry(
-                            icon = Icons.Filled.Shuffle,
-                            label = s.randomComic,
-                            hint = s.randomHint,
-                            loading = randomLoading,
-                            onClick = { scope.launch { surprise() } },
-                        )
-                        }
-                    }
-
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        ArchiveReveal(index = 4, generation = revealGeneration) {
-                        SurpriseEntry(
-                            icon = Icons.Filled.AutoAwesome,
-                            label = s.guessYouLike,
-                            hint = s.guessHint,
-                            loading = guessLoading,
-                            onClick = { scope.launch { guess() } },
-                        )
-                        }
-                    }
-
-                    if (recentItems.isNotEmpty()) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Column {
-                                SectionHeader(title = s.recentReads)
-                                RecentRow(repo, recentItems.take(10)) { entry ->
-                                    navController.navigate(Routes.comicDetail(entry.albumId))
-                                }
-                            }
-                        }
-                    }
-
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        SectionHeader(
-                            title = s.latest,
-                            actionLabel = s.viewAll,
-                            onAction = { navController.navigate(Routes.comicList("latest", s.latest)) },
-                        )
-                    }
-
-                    gridItems(state.latest, key = { it.id }) { item ->
-                        ComicCard(
-                            item = item,
-                            repo = repo,
-                            onClick = { navController.navigate(Routes.comicDetail(item.id)) },
-                        )
-                    }
+                items(state.latest, key = { it.id }) { item ->
+                    ArchiveBookRow(
+                        id = item.id,
+                        title = item.name,
+                        author = item.author.orEmpty().ifBlank { item.category?.title.orEmpty() },
+                        cover = item.image,
+                        onClick = { navController.navigate(Routes.comicDetail(item.id)) },
+                    )
+                }
 
                 if (loadingMore) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
+                    item(key = "loading-more") {
                         Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
                         }
@@ -436,75 +463,6 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
             hostState = snackbar,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = BottomNavReserve),
         )
-    }
-}
-
-/**
- * "Surprise me" entry: a quiet full-width row under the quick links.
- *
- * Deliberately not a fifth square tile - four tiles is a rhythm, five is a grid that almost fits.
- * As a row it also has space for the one line that explains what the button does.
- */
-@Composable
-private fun SurpriseEntry(
-    icon: ImageVector,
-    label: String,
-    hint: String,
-    loading: Boolean,
-    onClick: () -> Unit,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
-            .clickable(enabled = !loading, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(11.dp))
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(19.dp),
-            )
-        }
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(
-                label,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                hint,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-        }
-        if (loading) {
-            CircularProgressIndicator(
-                Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        } else {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
-            )
-        }
     }
 }
 
@@ -588,147 +546,6 @@ private fun HomeHeader(
 }
 
 /**
- * Hero carousel: one large cover per page with the title and the primary action layered over a
- * gradient scrim, plus a line of dots.
- *
- * The old home screen opened with a 16:9 banner strip - too short to show cover art and too wide
- * to read as a "featured work". This is 4:5, which is the shape the source art is actually
- * cropped to.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun HeroCarousel(
-    repo: AppRepository,
-    items: List<ComicListItem>,
-    initialPage: Int,
-    onPageChanged: (Int) -> Unit,
-    onItemClick: (ComicListItem) -> Unit,
-) {
-    val s = LocalAppStrings.current
-    val pagerState = rememberPagerState(
-        initialPage = initialPage.coerceIn(0, (items.size - 1).coerceAtLeast(0)),
-        pageCount = { items.size },
-    )
-    LaunchedEffect(pagerState.currentPage) { onPageChanged(pagerState.currentPage) }
-
-    Column {
-        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { index ->
-            val item = items[index]
-            val cover = if (item.image.isNotBlank()) item.image else repo.comicCover(item.id, item.updateAt)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(0.86f)
-                    .clip(MaterialTheme.shapes.large)
-                    .glassClickable(shape = MaterialTheme.shapes.large) { onItemClick(item) },
-            ) {
-                AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current).data(cover).crossfade(true).build(),
-                    contentDescription = item.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                0.30f to Color.Transparent,
-                                0.62f to Color(0xB3000000),
-                                1f to Color(0xF20A0A0C),
-                            ),
-                        ),
-                )
-                Column(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                ) {
-                    Row(
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.primary)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "${s.quickWeek} · TOP ${index + 1}",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 0.4.sp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    }
-                    Text(
-                        item.name,
-                        fontSize = 26.sp,
-                        lineHeight = 31.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = (-0.5).sp,
-                        color = Color.White,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 9.dp),
-                    )
-                    Text(
-                        listOfNotNull(
-                            item.author?.takeIf { it.isNotBlank() },
-                            item.category?.title?.takeIf { it.isNotBlank() },
-                        ).joinToString(" · ").ifBlank { s.forYou },
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.78f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 4.dp),
-                    )
-                    Row(
-                        Modifier
-                            .padding(top = 14.dp)
-                            .fillMaxWidth()
-                            .height(44.dp)
-                            .clip(MaterialTheme.shapes.small)
-                            .background(MaterialTheme.colorScheme.primary)
-                            .clickable { onItemClick(item) },
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            s.startReading,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                    }
-                }
-            }
-        }
-        if (items.size > 1) {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                repeat(items.size) { i ->
-                    val active = i == pagerState.currentPage
-                    Box(
-                        Modifier
-                            .padding(horizontal = 2.5.dp)
-                            .height(4.dp)
-                            .width(if (active) 16.dp else 5.dp)
-                            .clip(RoundedCornerShape(50))
-                            .background(
-                                if (active) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.28f),
-                            ),
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
  * Four primary destinations, then the "more content" links as quiet chips.
  *
  * The old quick-link row was eight identical 44dp icon boxes with 11sp labels - a wall of chrome
@@ -739,157 +556,35 @@ private fun HeroCarousel(
 private fun QuickLinks(navController: NavHostController) {
     val s = LocalAppStrings.current
     val primary = listOf(
-        Triple(s.quickWeek, Icons.Filled.Star) { navController.navigate(Routes.WEEK) },
-        Triple(s.quickDaily, Icons.Filled.CalendarMonth) { navController.navigate(Routes.DAILY) },
-        Triple(s.quickHot, Icons.Filled.Whatshot) { navController.navigate(Routes.HOT_TAGS) },
-        Triple(s.quickCategories, Icons.Filled.Category) { navController.navigate(Routes.CATEGORIES) },
+        Triple(s.quickWeek, "01 / WEEK") { navController.navigate(Routes.WEEK) },
+        Triple(s.quickDaily, "02 / DAILY") { navController.navigate(Routes.DAILY) },
+        Triple(s.quickHot, "03 / RANKING") { navController.navigate(Routes.HOT_TAGS) },
+        Triple(s.quickCategories, "04 / INDEX") { navController.navigate(Routes.CATEGORIES) },
     )
     val secondary = listOf(
-        Triple(s.quickNovels, Icons.Filled.Article) { navController.navigate(Routes.NOVELS) },
-        Triple(s.quickMovies, Icons.Filled.LocalMovies) { navController.navigate(Routes.MOVIES) },
-        Triple(s.quickGames, Icons.Filled.SportsEsports) { navController.navigate(Routes.GAMES) },
-        Triple(s.quickBlogs, Icons.Filled.Forum) { navController.navigate(Routes.BLOGS) },
+        Triple(s.quickNovels, "05") { navController.navigate(Routes.NOVELS) },
+        Triple(s.quickMovies, "06") { navController.navigate(Routes.MOVIES) },
+        Triple(s.quickGames, "07") { navController.navigate(Routes.GAMES) },
+        Triple(s.quickBlogs, "08") { navController.navigate(Routes.BLOGS) },
     )
 
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            primary.forEach { (label, icon, onClick) ->
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(MaterialTheme.colorScheme.surface)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
-                        .clickable(onClick = onClick)
-                        .padding(vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Box(
-                        Modifier
-                            .size(30.dp)
-                            .clip(RoundedCornerShape(9.dp))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(icon, contentDescription = label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
-                    }
-                    Text(
-                        label,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        modifier = Modifier.padding(top = 7.dp),
-                    )
-                }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            primary.forEach { (label, code, onClick) ->
+                ArchiveIndexTile(
+                    code = code,
+                    label = label,
+                    onClick = onClick,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
         Row(
-            Modifier.fillMaxWidth().padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth().padding(top = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            secondary.forEach { (label, icon, onClick) ->
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(9.dp))
-                        .clickable(onClick = onClick)
-                        .padding(vertical = 6.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(13.dp),
-                    )
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        label,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/** Horizontal strip of recently opened works with their reading progress. */
-@Composable
-private fun RecentRow(
-    repo: AppRepository,
-    entries: List<HistoryManager.Entry>,
-    onClick: (HistoryManager.Entry) -> Unit,
-) {
-    LazyRow(
-        contentPadding = PaddingValues(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        listItems(entries, key = { it.albumId }) { entry ->
-            Column(
-                Modifier
-                    .width(112.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .glassClickable(shape = MaterialTheme.shapes.small) { onClick(entry) },
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(3f / 4f)
-                        .clip(MaterialTheme.shapes.small)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current)
-                            .data(repo.comicCover(entry.albumId, entry.updateAt))
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = entry.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    if (entry.hasProgress) {
-                        Box(
-                            Modifier
-                                .align(Alignment.BottomStart)
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .background(Color.White.copy(alpha = 0.18f)),
-                        ) {
-                            // The reader reports a page, not a fraction, so the bar is a coarse
-                            // "somewhere in the middle" cue rather than a measured percentage.
-                            Box(
-                                Modifier
-                                    .fillMaxWidth((((entry.pageIndex % 20) / 20f) + 0.08f).coerceIn(0.08f, 1f))
-                                    .height(3.dp)
-                                    .background(MaterialTheme.colorScheme.primary),
-                            )
-                        }
-                    }
-                }
-                Text(
-                    entry.name,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-                Text(
-                    entry.episodeName?.takeIf { it.isNotBlank() } ?: "P${entry.pageIndex.coerceAtLeast(1)}",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 1.dp),
-                )
+            secondary.forEach { (label, code, onClick) ->
+                ArchiveTextLink(code = code, label = label, onClick = onClick)
             }
         }
     }

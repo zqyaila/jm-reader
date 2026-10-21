@@ -9,10 +9,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
@@ -166,46 +168,53 @@ fun SectionHeader(
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
+    code: String? = null,
 ) {
-    // Archive section mark: a 4 dp ink square, the title, then a hairline that runs to the action.
-    // No card, no background - the rule is what separates sections, exactly like a printed page.
-    Row(
-        modifier.fillMaxWidth().padding(top = 10.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(4.dp)
-                .background(MaterialTheme.colorScheme.onBackground),
-        )
-        Text(
-            text = title,
-            fontSize = 18.sp,
-            lineHeight = 22.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = (-0.4).sp,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(start = 8.dp),
-        )
-        Box(
-            Modifier
-                .weight(1f)
-                .padding(start = 10.dp)
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant),
-        )
-        if (actionLabel != null && onAction != null) {
+    // Archive section mark, after the reference's `ArchiveSection`: an address over a rule that
+    // ends in a printed dot, then the heading. No card, no background - the rule separates.
+    Column(modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
+        if (code != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    code,
+                    style = com.jm.reader.ui.theme.CodeTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(9.dp))
+                Box(
+                    Modifier.weight(1f).height(1.dp)
+                        .background(MaterialTheme.colorScheme.outlineVariant),
+                )
+                Spacer(Modifier.width(5.dp))
+                Box(Modifier.size(3.dp).background(MaterialTheme.colorScheme.onSurface))
+            }
+            Spacer(Modifier.height(7.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = actionLabel,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .padding(start = 10.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .clickable(onClick = onAction)
-                    .padding(horizontal = 4.dp, vertical = 3.dp),
+                text = title,
+                fontSize = 18.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.3).sp,
+                color = MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            if (actionLabel != null && onAction != null) {
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = actionLabel,
+                    style = com.jm.reader.ui.theme.CodeTextStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(2.dp))
+                        .clickable(onClick = onAction)
+                        .padding(horizontal = 4.dp, vertical = 3.dp),
+                )
+            }
         }
     }
 }
