@@ -279,6 +279,7 @@ data class AppStrings(
     val updateFailedFmt: String,      // "检查更新失败：%1\$s"
     val updateInstallBlocked: String,
     val updateSizeFmt: String,        // "安装包 %1\$s"
+    val updateProgressFmt: String,    // "%1\$s / %2\$s"
 ) {
     companion object {
         fun forLanguage(lang: UiLanguage): AppStrings = when (lang) {
@@ -526,6 +527,7 @@ val ZhCN = AppStrings(
     updateFailedFmt = "检查更新失败：%1\$s",
     updateInstallBlocked = "请先允许安装未知来源应用，然后重试",
     updateSizeFmt = "安装包 %1\$s",
+    updateProgressFmt = "已下载 %1\$s / %2\$s",
 )
 
 /** 繁體中文 */
@@ -765,6 +767,7 @@ val ZhTW = AppStrings(
     updateFailedFmt = "檢查更新失敗：%1\$s",
     updateInstallBlocked = "請先允許安裝未知來源應用，然後重試",
     updateSizeFmt = "安裝包 %1\$s",
+    updateProgressFmt = "已下載 %1\$s / %2\$s",
 )
 
 /** English */
@@ -1004,6 +1007,7 @@ val En = AppStrings(
     updateFailedFmt = "Update check failed: %1\$s",
     updateInstallBlocked = "Allow installing from unknown sources, then try again",
     updateSizeFmt = "Package %1\$s",
+    updateProgressFmt = "Downloaded %1\$s / %2\$s",
 )
 
 

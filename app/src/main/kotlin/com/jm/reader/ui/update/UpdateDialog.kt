@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,6 +49,9 @@ fun UpdateDialog(onDismiss: () -> Unit) {
     var checking by remember { mutableStateOf(true) }
     var downloading by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
+    // Total bytes, taken from the release first and then corrected by the response itself; the
+    // dialog used to print the metadata figure forever, even when the server sent another size.
+    var totalBytes by remember { mutableLongStateOf(0L) }
     var error by remember { mutableStateOf<String?>(null) }
     var upToDate by remember { mutableStateOf(false) }
     var installBlocked by remember { mutableStateOf(false) }
@@ -59,7 +63,10 @@ fun UpdateDialog(onDismiss: () -> Unit) {
         error = null
         upToDate = false
         when (val r = manager.check()) {
-            is UpdateManager.CheckResult.Available -> info = r.info
+            is UpdateManager.CheckResult.Available -> {
+                info = r.info
+                totalBytes = r.info.sizeBytes
+            }
             UpdateManager.CheckResult.Latest -> upToDate = true
             is UpdateManager.CheckResult.Failed -> error = s.updateFailedFmt.format(r.message)
         }
@@ -74,7 +81,7 @@ fun UpdateDialog(onDismiss: () -> Unit) {
         progress = 0f
         error = null
         scope.launch {
-            when (val r = manager.download(target) { progress = it }) {
+            when (val r = manager.download(target, onProgress = { progress = it }, onTotal = { totalBytes = it })) {
                 is UpdateManager.DownloadResult.Done -> {
                     downloading = false
                     downloadedFile = r.file
@@ -116,8 +123,9 @@ fun UpdateDialog(onDismiss: () -> Unit) {
                     checking -> Text(s.updateChecking, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                     downloading -> {
+                        val total = if (totalBytes > 0L) totalBytes else (info?.sizeBytes ?: 0L)
                         Text(
-                            s.updateSizeFmt.format(formatSize(info?.sizeBytes ?: 0L)),
+                            s.updateSizeFmt.format(formatSize(total)),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -134,6 +142,16 @@ fun UpdateDialog(onDismiss: () -> Unit) {
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        if (total > 0L && progress >= 0f) {
+                            Text(
+                                s.updateProgressFmt.format(
+                                    formatSize((total * progress).toLong()),
+                                    formatSize(total),
+                                ),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
 
                     installBlocked -> Text(s.updateInstallBlocked, fontSize = 13.sp)
@@ -144,7 +162,7 @@ fun UpdateDialog(onDismiss: () -> Unit) {
 
                     info != null -> {
                         Text(
-                            s.updateSizeFmt.format(formatSize(info!!.sizeBytes)),
+                            s.updateSizeFmt.format(formatSize(totalBytes.takeIf { it > 0 } ?: info!!.sizeBytes)),
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

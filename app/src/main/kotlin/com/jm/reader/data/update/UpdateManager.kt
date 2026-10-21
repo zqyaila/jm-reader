@@ -172,6 +172,12 @@ class UpdateManager(
     suspend fun download(
         info: UpdateInfo,
         onProgress: (Float) -> Unit,
+        /**
+         * Total size as the *server* reports it. The release metadata carries `size`, but a
+         * mirror or a redirect can answer with a different (or missing) length; reporting it here
+         * lets the dialog show real bytes instead of a stale default.
+         */
+        onTotal: (Long) -> Unit = {},
     ): DownloadResult = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "updates")
         if (!dir.exists() && !dir.mkdirs()) return@withContext DownloadResult.Failed("Cannot create cache dir")
@@ -182,7 +188,7 @@ class UpdateManager(
 
         for (prefix in orderedSources().map { it.prefix }) {
             try {
-                val ok = fetch(prefix + info.url, part, info.sizeBytes, onProgress)
+                val ok = fetch(prefix + info.url, part, info.sizeBytes, onProgress, onTotal)
                 if (!ok) continue
 
                 val expected = info.sha256
@@ -239,7 +245,13 @@ class UpdateManager(
     private fun apiUrls(): List<String> = orderedSources().map { it.prefix + API_URL }
 
     /** Streams into [part], appending when the server answers `206 Partial Content`. */
-    private fun fetch(url: String, part: File, expectedSize: Long, onProgress: (Float) -> Unit): Boolean {
+    private fun fetch(
+        url: String,
+        part: File,
+        expectedSize: Long,
+        onProgress: (Float) -> Unit,
+        onTotal: (Long) -> Unit,
+    ): Boolean {
         val existing = if (part.exists()) part.length() else 0L
         val request = Request.Builder()
             .url(url)
@@ -251,7 +263,7 @@ class UpdateManager(
             // 416 means our partial file is already the whole thing (or stale): start over.
             if (resp.code == 416) {
                 part.delete()
-                if (existing > 0) return fetch(url, part, expectedSize, onProgress)
+                if (existing > 0) return fetch(url, part, expectedSize, onProgress, onTotal)
                 return false
             }
             if (!resp.isSuccessful) return false
@@ -262,6 +274,7 @@ class UpdateManager(
                 resp.code == 206 -> parseContentRangeTotal(resp.header("Content-Range"))
                 else -> body.contentLength()
             }.let { if (it > 0) it else expectedSize }
+            if (total > 0) onTotal(total)
 
             var written = if (append) existing else 0L
             if (append) onProgress(if (total > 0) written.toFloat() / total else -1f)
