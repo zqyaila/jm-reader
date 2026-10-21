@@ -27,6 +27,25 @@ object ArchiveMotion {
     const val EnterMs = 420
     const val ExitMs = 320
 
+    // ---- Sheet exchange -------------------------------------------------------------------
+    // The reference does not cross-fade between pages: the incoming page is *cut* in along a
+    // shallow diagonal and slides 24dp/12dp into place while the outgoing one barely moves. Hard
+    // edges keep text crisp; a fade would stack two translucent pages and read as mush.
+
+    /** Incoming page exchange, same length as [EnterMs] so the two clocks cannot drift apart. */
+    const val PlaneMs = 420
+
+    /** `Cubic(.18, .72, .18, 1)` - most of the travel happens in the first third. */
+    val Plane: Easing = CubicBezierEasing(0.18f, 0.72f, 0.18f, 1f)
+
+    /** Where the incoming sheet starts, in dp. */
+    const val PlaneShiftXDp = -24f
+    const val PlaneShiftYDp = 12f
+
+    /** The cut edge leans this far across the page, capped so a tablet does not get a 45 degree wall. */
+    const val PlaneSlantFraction = 0.46f
+    const val PlaneSlantMaxDp = 180f
+
     /** How long each staggered item waits behind the previous one. */
     const val StaggerStepMs = 45L
 

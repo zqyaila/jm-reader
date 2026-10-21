@@ -1,5 +1,6 @@
 package com.jm.reader.ui
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -120,10 +121,20 @@ fun AppNavHost(navController: NavHostController) {
             )
         },
         exitTransition = {
-            slideOutHorizontally(
-                animationSpec = tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit),
-                targetOffsetX = { -it / 3 },
-            )
+            // Entering the dossier is a sheet exchange, not a stack push: the old page stays put
+            // (10 px) and opaque while the new page is cut in over it. Every other route keeps the
+            // third-width retreat so the stack still reads as paper.
+            if (targetState.destination.route == Routes.COMIC_DETAIL) {
+                slideOutHorizontally(
+                    animationSpec = tween(ArchiveMotion.PlaneMs, easing = ArchiveMotion.Plane),
+                    targetOffsetX = { it / 60 },
+                )
+            } else {
+                slideOutHorizontally(
+                    animationSpec = tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit),
+                    targetOffsetX = { -it / 3 },
+                )
+            }
         },
         popEnterTransition = {
             slideInHorizontally(
@@ -172,23 +183,32 @@ fun AppNavHost(navController: NavHostController) {
         composable(
             Routes.COMIC_DETAIL,
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            // The incoming page cuts itself in (see `ArchivePlaneEnter`), so the route only has
+            // to occupy the same 420 ms clock and keep the old sheet composed underneath it.
+            // Zero offset on purpose: any slide or fade here would be a second, competing
+            // transition layered over the diagonal cut.
             enterTransition = {
-                fadeIn(tween(240)) + scaleIn(initialScale = 0.99f, animationSpec = tween(240))
+                slideInHorizontally(
+                    animationSpec = tween(ArchiveMotion.PlaneMs, easing = LinearEasing),
+                    initialOffsetX = { 0 },
+                )
             },
+            // The reference's outgoing sheet: it gives up 10 px and stays opaque until the new
+            // plane covers it, which is what makes the stack read as paper rather than as a fade.
             exitTransition = {
                 slideOutHorizontally(
-                    animationSpec = tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit),
-                    targetOffsetX = { -it / 3 },
+                    animationSpec = tween(ArchiveMotion.PlaneMs, easing = ArchiveMotion.Plane),
+                    targetOffsetX = { it / 60 },
                 )
             },
             popEnterTransition = {
                 slideInHorizontally(
-                    animationSpec = tween(ArchiveMotion.EnterMs, easing = ArchiveMotion.Enter),
+                    animationSpec = tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit),
                     initialOffsetX = { -it / 3 },
                 )
             },
             popExitTransition = {
-                fadeOut(tween(200)) + scaleOut(targetScale = 0.99f, animationSpec = tween(200))
+                fadeOut(tween(180))
             },
         ) { entry ->
             ComicDetailScreen(navController, entry.arguments?.getString("id").orEmpty())

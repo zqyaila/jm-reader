@@ -88,14 +88,17 @@ import com.jm.reader.ui.LocalStats
 import com.jm.reader.ui.components.ArchiveBookRow
 import com.jm.reader.ui.components.ArchiveCode
 import com.jm.reader.ui.components.ArchiveDetailLayout
+import com.jm.reader.ui.components.ArchivePlaneEnter
 import com.jm.reader.ui.components.ArchivePlate
 import com.jm.reader.ui.components.ArchiveReveal
 import com.jm.reader.ui.components.ArchiveSectionHeader
 import com.jm.reader.ui.components.ErrorView
+import com.jm.reader.ui.components.LocalShelfFlight
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.components.registrationMarks
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.ui.strings.AppStrings
+import com.jm.reader.ui.theme.AppBackdrop
 import com.jm.reader.ui.theme.CodeTextStyle
 import com.jm.reader.ui.theme.glassClickable
 import com.jm.reader.util.JmId
@@ -183,6 +186,13 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
         }
     }
 
+    // The page cuts itself in: the shelf it came from stays composed underneath and is covered by
+    // this sheet along a diagonal. The route's own transition is deliberately invisible.
+    ArchivePlaneEnter {
+    // The sheet needs its own paper: the Scaffold is transparent so the backdrop shows through,
+    // and without an opaque layer inside the clip the page's text would be painted straight on top
+    // of the shelf it is covering. It travels and is cut with the page, like a sheet of paper.
+    AppBackdrop()
     Scaffold(
         containerColor = Color.Transparent,
         topBar = { DossierBar(title = s.comicDetail, onBack = { navController.popBackStack() }) },
@@ -218,7 +228,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                     val chapters = if (detail.series.isNotEmpty()) detail.series.sortedBy { it.sort } else emptyList()
                     val readId = chapters.firstOrNull()?.id ?: detail.id
                     val downloaded = downloadedAlbums.any { it.albumId == detail.id }
-                    val cover = if (detail.isPaid) "" else repo.comicCoverDetail(detail.id, detail.addtime)
+                    val cover = if (detail.isPaid) "" else repo.comicCoverDetail(detail.id, 0L)
                     val workId = JmId.display(detail.id)
                     val clipboard = LocalClipboardManager.current
 
@@ -493,6 +503,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
             }
         }
     }
+    }
 }
 
 
@@ -527,10 +538,14 @@ private fun DossierSkeleton(cover: String) {
                     .padding(3.dp)
                     .background(block, RoundedCornerShape(1.dp)),
             ) {
+                // Same URL as the loaded page below, so Coil serves both from one cache entry and
+                // the flight's landed frame is replaced without a visible swap.
+                val flight = LocalShelfFlight.current
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
+                    onSuccess = { flight?.markPageCoverReady() },
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(1.dp)),
                 )
             }
@@ -689,10 +704,12 @@ private fun DossierHeader(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(1.dp)),
                 ) {
+                    val flight = LocalShelfFlight.current
                     AsyncImage(
-                        model = ImageRequest.Builder(LocalContext.current).data(cover).crossfade(true).build(),
+                        model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
                         contentDescription = detail.name,
                         contentScale = ContentScale.Crop,
+                        onSuccess = { flight?.markPageCoverReady() },
                         modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(1.dp)),
                     )
                 }

@@ -46,6 +46,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -145,6 +146,19 @@ fun ShelfBank(
     var labelLane by remember { mutableIntStateOf(0) }
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var flying by remember { mutableStateOf(false) }
+    // The cover that is in the air: its own copy on the shelf is hidden, so the reader sees one
+    // book leaving the row rather than a duplicate flying out of a still-occupied slot (the
+    // reference's Hero hands the source child to the overlay for exactly this reason).
+    var flyingSlot by remember { mutableStateOf<Int?>(null) }
+    // The source cover stays hidden well past the take-off: clearing it on navigate would put the
+    // book back on the shelf while the new page is still only part-way across, which reads as the
+    // cover jumping home. It is restored long after the page has covered the row.
+    LaunchedEffect(flyingSlot) {
+        if (flyingSlot != null) {
+            kotlinx.coroutines.delay(700)
+            flyingSlot = null
+        }
+    }
     val flight = LocalShelfFlight.current
     var lastDetent by remember { mutableIntStateOf(0) }
 
@@ -246,7 +260,8 @@ fun ShelfBank(
                     spine = spine,
                     cover = cover,
                     body = body,
-                    onTapSlot = { slot, bounds ->
+                    flyingSlot = flyingSlot,
+                    onTapSlot = { slot, bounds, decodeWidth ->
                         val d = slot - displayFocus()
                         if (abs(d) < 0.35f) {
                             val book = pool[slot]
@@ -255,11 +270,17 @@ fun ShelfBank(
                             // it; the shelf behind recedes with the route's own exit.
                             if (flight != null && book.cover.isNotBlank() && bounds.width > 0f && !flying) {
                                 flying = true
+                                flyingSlot = slot
                                 flight.launch(
-                                    ShelfFlightRequest(book.cover, bounds) {
-                                        flying = false
-                                        onOpen(book)
-                                    },
+                                    ShelfFlightRequest(
+                                        cover = book.cover,
+                                        start = bounds,
+                                        decodeWidthPx = decodeWidth,
+                                        onArrive = {
+                                            flying = false
+                                            onOpen(book)
+                                        },
+                                    ),
                                 )
                             } else {
                                 onOpen(book)
@@ -419,7 +440,8 @@ private fun ShelfRow(
     spine: Float,
     cover: Float,
     body: Float,
-    onTapSlot: (Int, Rect) -> Unit,
+    flyingSlot: Int?,
+    onTapSlot: (Int, Rect, Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // All the geometry above is in dp; `place` and the canvas want pixels. Scaling at the
@@ -454,7 +476,8 @@ private fun ShelfRow(
                         spine = spine,
                         cover = cover,
                         body = body,
-                        onTap = { bounds -> onTapSlot(slot, bounds) },
+                        hideCover = slot == flyingSlot,
+                        onTap = { bounds, decodeWidth -> onTapSlot(slot, bounds, decodeWidth) },
                     )
                 }
             },
@@ -609,7 +632,8 @@ private fun ShelfVolume(
     spine: Float,
     cover: Float,
     body: Float,
-    onTap: (Rect) -> Unit,
+    hideCover: Boolean,
+    onTap: (Rect, Int) -> Unit,
 ) {
     // A plain holder, not a MutableState: publishing root bounds through state would recompose
     // every volume on every frame of a drag, which is exactly the cost the pooled row avoids.
@@ -657,7 +681,7 @@ private fun ShelfVolume(
                 // Only the cover publishes bounds: the spine shares them so a tap on the spine
                 // flies the same rectangle, instead of a 15 dp strip stretching to the dossier.
                 .onGloballyPositioned { bounds.rect = it.boundsInRoot() }
-                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds.rect) },
+                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds.rect, coverPx) },
         ) {
             Column(
                 Modifier.fillMaxSize().padding(start = 10.dp, end = 10.dp, top = 9.dp, bottom = 8.dp),
@@ -679,7 +703,9 @@ private fun ShelfVolume(
                         model = coverRequest,
                         contentDescription = item.title,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(if (hideCover) 0f else 1f),
                     )
                 }
                 Spacer(Modifier.height(4.dp))
@@ -698,7 +724,7 @@ private fun ShelfVolume(
                 .size(spine.dp, body.dp)
                 .projectFace(1f, 0.10f, 0f, 0f)
                 .background(surface)
-                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds.rect) },
+                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds.rect, coverPx) },
         ) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 9.dp),
