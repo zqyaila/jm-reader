@@ -163,13 +163,14 @@ fun ArchiveBookRow(
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val hairline = MaterialTheme.colorScheme.outlineVariant
     Row(
         modifier
             .fillMaxWidth()
             .glassClickable(shape = RoundedCornerShape(0.dp), onClick = onClick)
             .drawBehind {
                 drawLine(
-                    color = Color(0xFFD8DBD5).copy(alpha = 0.9f),
+                    color = hairline,
                     start = Offset(0f, size.height),
                     end = Offset(size.width, size.height),
                     strokeWidth = 0.7.dp.toPx(),
@@ -427,13 +428,14 @@ fun ArchiveTabs(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val hairline = MaterialTheme.colorScheme.outlineVariant
     Row(
         modifier
             .fillMaxWidth()
             .padding(top = 4.dp)
             .drawBehind {
                 drawLine(
-                    color = Color(0xFFD8DBD5),
+                    color = hairline,
                     start = Offset(0f, size.height),
                     end = Offset(size.width, size.height),
                     strokeWidth = 0.7.dp.toPx(),
