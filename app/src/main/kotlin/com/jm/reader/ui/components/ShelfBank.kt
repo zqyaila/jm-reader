@@ -127,12 +127,23 @@ fun ShelfBank(
     val reduceMotion = !motion
 
     var focus by remember { mutableFloatStateOf(0f) }
+    // The lane window is driven by this integer, not by a derived read of the float. It is written
+    // from the drag callback itself, so a drag that crosses the tenth book mounts the eleventh lane
+    // immediately - a `derivedStateOf` on the float only refreshed after the gesture settled, which
+    // made the bank look like it stopped at the edge until the finger came up.
+    var laneAnchor by remember { mutableIntStateOf(0) }
     // The cover lifts for 160 ms before the route slides in, so the tap reads as "taking the book
     // off the shelf" rather than as the page swapping under the finger.
     var openingSlot by remember { mutableStateOf<Int?>(null) }
     val opening = remember { Animatable(0f) }
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var lastDetent by remember { mutableIntStateOf(0) }
+
+    fun setFocus(value: Float) {
+        focus = value
+        val lane = value.roundToInt()
+        if (lane != laneAnchor) laneAnchor = lane
+    }
 
     // The reference's 720 ms assembly: books slide in from depth along the projection axis, in
     // reading order, while their centre weight arrives later (interval .38 → 1).
@@ -155,7 +166,7 @@ fun ShelfBank(
         if (count <= 0) return
         val wrapped = shelfWrapFocus(focus, count)
         if (abs(wrapped - focus) > 0.0001f) {
-            focus = wrapped
+            setFocus(wrapped)
             lastDetent = wrapped.roundToInt()
         }
     }
@@ -168,7 +179,7 @@ fun ShelfBank(
                 Animatable(focus).animateTo(
                     targetValue = focus.roundToInt().toFloat(),
                     animationSpec = spring(dampingRatio = 0.86f, stiffness = 320f),
-                ) { focus = value }
+                ) { setFocus(value) }
                 reseat()
                 return@launch
             }
@@ -176,11 +187,11 @@ fun ShelfBank(
             anim.animateDecay(
                 initialVelocity = velocityDp / pitchDp,
                 animationSpec = exponentialDecay(frictionMultiplier = 1.35f),
-            ) { focus = value }
+            ) { setFocus(value) }
             anim.animateTo(
                 targetValue = anim.value.roundToInt().toFloat(),
                 animationSpec = spring(dampingRatio = 0.82f, stiffness = 300f),
-            ) { focus = value }
+            ) { setFocus(value) }
             reseat()
         }
     }
@@ -196,12 +207,12 @@ fun ShelfBank(
                     durationMillis = 420,
                     easing = CubicBezierEasing(0.2f, 1.06f, 0.35f, 1f),
                 ),
-            ) { focus = value }
+            ) { setFocus(value) }
             reseat()
         }
     }
 
-    val focusedIndex = remember { derivedStateOf { Math.floorMod(focus.roundToInt(), count) } }
+    val focusedIndex = Math.floorMod(laneAnchor, count)
 
     Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -223,6 +234,7 @@ fun ShelfBank(
                     ShelfScene(
                         items = items,
                         focus = { focus },
+                        laneAnchor = laneAnchor,
                         entrance = { entrance.value },
                         viewport = viewport,
                         spine = spine,
@@ -262,7 +274,7 @@ fun ShelfBank(
                                 state = rememberDraggableState { delta ->
                                     if (count < 2) return@rememberDraggableState
                                     flingJob?.cancel()
-                                    focus -= delta / (pitch * density.density)
+                                    setFocus(focus - delta / (pitch * density.density))
                                     val lane = focus.roundToInt()
                                     if (lane != lastDetent && abs(focus - lane) < 0.12f) {
                                         lastDetent = lane
@@ -278,7 +290,7 @@ fun ShelfBank(
 
                 // The extracted file's label and address; tapping opens it, exactly like the
                 // reference's `archive-shelf-open` row.
-                val book = items[focusedIndex.value]
+                val book = items[focusedIndex]
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -335,7 +347,7 @@ fun ShelfBank(
                             )
                         }
                         Text(
-                            "${(focusedIndex.value + 1).toString().padStart(2, '0')} / " +
+                            "${(focusedIndex + 1).toString().padStart(2, '0')} / " +
                                 count.toString().padStart(2, '0'),
                             style = CodeTextStyle,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -442,6 +454,7 @@ private fun Modifier.projectFace(xScale: Float, yShear: Float, dx: Float, dy: Fl
 private fun ShelfScene(
     items: List<ShelfItem>,
     focus: () -> Float,
+    laneAnchor: Int,
     entrance: () -> Float,
     viewport: Float,
     spine: Float,
@@ -456,8 +469,6 @@ private fun ShelfScene(
     val startX = viewport / 2f - shelfFootprint(spine, cover) / 2f + shelfPull(cover) * ShelfDepthX
     val pitch = shelfPitch(viewport)
 
-    // Recompute the mounted slots only when the centre crosses a book, never per drag pixel.
-    val laneAnchor by remember { derivedStateOf { focus().roundToInt() } }
     // A window of lanes around the centre, not the bare item list: the bank is a loop, so books
     // to the left of the first file are the last files, and the extracted one is always centred.
     // Enough lanes to cover the viewport on both sides: 19 on a phone, more on a wide canvas.
