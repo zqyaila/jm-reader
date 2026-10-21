@@ -443,21 +443,26 @@ private fun ShelfRow(
     onTapSlot: (Int, Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // All the geometry above is in dp; `place` and the canvas want pixels. Scaling at the
+    // boundary is what keeps the row from collapsing into one stack.
+    val scale = LocalDensity.current.density
     Box(
         modifier
             .clipToBounds()
             .drawBehind {
                 val focus = displayFocus()
                 val ent = entrance()
+                val spinePx = spine * scale
+                val coverPx = cover * scale
                 pool.forEachIndexed { slot, _ ->
                     val d = slot - focus
                     val weight = shelfWeight(d) * crest(ent)
                     val origin = shelfOrigin(cover, body, weight)
-                    val x = startX + d * pitch + origin.x
+                    val x = (startX + d * pitch + origin.x) * scale
                     // Only shadows that can be seen pay for a path.
-                    if (x < -cover - 20f || x > viewport + 20f) return@forEachIndexed
-                    val y = shelfRailY(d) + shelfBaseY(cover, body) + body
-                    drawShelfFloor(x, y, spine, cover)
+                    if (x < -coverPx - 20f || x > size.width + 20f) return@forEachIndexed
+                    val y = (shelfRailY(d) + shelfBaseY(cover, body) + body) * scale
+                    drawShelfFloor(x, y, spinePx, coverPx)
                 }
             },
     ) {
@@ -488,14 +493,31 @@ private fun ShelfRow(
                     val origin = shelfOrigin(cover, body, weight)
                     val assembly = shelfAssemblyOffset(d, ent, viewport, pitch)
                     placeable.place(
-                        (startX + d * pitch + origin.x + assembly.x).roundToInt(),
-                        (shelfRailY(d) + origin.y + assembly.y).roundToInt(),
+                        shelfSlotPx(slot, focus, startX, pitch, origin.x + assembly.x, scale).roundToInt(),
+                        ((shelfRailY(d) + origin.y + assembly.y) * scale).roundToInt(),
                     )
                 }
             }
         }
     }
 }
+
+/**
+ * Horizontal position of a slot in pixels.
+ *
+ * The geometry (`startX`, `pitch`, the projection) is expressed in dp; placement and the canvas
+ * both want pixels. Forgetting the final multiply collapses every book onto the same spot - the
+ * row looks like one white stack with a single cover on top - so the conversion lives here, where
+ * a unit test can pin it.
+ */
+internal fun shelfSlotPx(
+    slot: Int,
+    focus: Float,
+    startX: Float,
+    pitch: Float,
+    originX: Float,
+    density: Float,
+): Float = (startX + (slot - focus) * pitch + originX) * density
 
 /** The 720 ms assembly: each book slides in from depth, in reading order. */
 private fun shelfAssemblyOffset(
