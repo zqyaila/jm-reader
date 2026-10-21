@@ -5,6 +5,12 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -198,7 +204,10 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             val detail = state.detail
             when {
-                state.loading && detail == null -> LoadingView()
+                // Never a spinner: the dossier's own layout slides in first and the fields fill
+                // it when they arrive. A cover flight lands on the plate below while this is
+                // still on screen, so the page reads as already open rather than as waiting.
+                state.loading && detail == null -> DossierSkeleton()
                 state.error != null && detail == null -> ErrorView(state.error!!, onRetry = { scope.launch { load() } })
                 detail == null -> ErrorView(s.loadFail, onRetry = { scope.launch { load() } })
                 else -> {
@@ -478,6 +487,120 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                     }
                 }
             }
+        }
+    }
+}
+
+
+/**
+ * The dossier's fixed template, shown before any field has arrived.
+ *
+ * Same gutters, plate size and row rhythm as the real page, so nothing reflows when the data
+ * lands - only the grey bars are replaced. The 900 ms pulse is alpha-only (no layout, no
+ * recomposition of the blocks), which is the quietest possible "still loading" cue.
+ */
+@Composable
+private fun DossierSkeleton() {
+    val transition = rememberInfiniteTransition(label = "dossierSkeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.28f,
+        targetValue = 0.55f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "skeletonAlpha",
+    )
+    val block = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.35f)
+    val line = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha * 0.28f)
+
+    Column(Modifier.fillMaxSize().padding(horizontal = Gutter)) {
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp)) {
+            Box(
+                Modifier
+                    .size(ArchiveDetailLayout.CoverWidth, ArchiveDetailLayout.CoverHeight)
+                    .border(0.7.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
+                    .padding(3.dp)
+                    .background(block, RoundedCornerShape(1.dp)),
+            )
+            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                Box(Modifier.size(width = 64.dp, height = 16.dp).background(block))
+                Spacer(Modifier.height(10.dp))
+                Box(Modifier.fillMaxWidth(0.92f).height(22.dp).background(block))
+                Spacer(Modifier.height(6.dp))
+                Box(Modifier.fillMaxWidth(0.64f).height(22.dp).background(block))
+                Spacer(Modifier.height(10.dp))
+                Box(Modifier.fillMaxWidth(0.45f).height(11.dp).background(line))
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth(0.6f).height(9.dp).background(line))
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                Modifier.weight(1.25f).height(46.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f), RoundedCornerShape(3.dp)),
+            )
+            repeat(2) {
+                Box(
+                    Modifier.weight(0.9f).height(46.dp)
+                        .border(0.7.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(3.dp)),
+                )
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        val hairline = MaterialTheme.colorScheme.outlineVariant
+        Row(
+            Modifier.fillMaxWidth().height(52.dp)
+                .drawBehind {
+                    val stroke = 0.7.dp.toPx()
+                    drawLine(hairline, Offset(0f, 0f), Offset(size.width, 0f), stroke)
+                    drawLine(hairline, Offset(0f, size.height), Offset(size.width, size.height), stroke)
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            repeat(3) { index ->
+                Column(Modifier.weight(1f)) {
+                    Box(Modifier.size(width = 42.dp, height = 16.dp).background(block))
+                    Spacer(Modifier.height(6.dp))
+                    Box(Modifier.size(width = 30.dp, height = 8.dp).background(line))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
+        Box(Modifier.size(width = 90.dp, height = 9.dp).background(line))
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.fillMaxWidth(0.7f).height(17.dp).background(block))
+        Spacer(Modifier.height(14.dp))
+        repeat(3) { index ->
+            Box(
+                Modifier
+                    .fillMaxWidth(if (index == 2) 0.55f else 1f)
+                    .height(11.dp)
+                    .background(line),
+            )
+            Spacer(Modifier.height(9.dp))
+        }
+
+        Spacer(Modifier.height(18.dp))
+        Box(Modifier.size(width = 90.dp, height = 9.dp).background(line))
+        Spacer(Modifier.height(8.dp))
+        Box(Modifier.size(width = 74.dp, height = 17.dp).background(block))
+        Spacer(Modifier.height(4.dp))
+        repeat(6) {
+            Row(
+                Modifier.fillMaxWidth().height(44.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(width = 22.dp, height = 8.dp).background(line))
+                Spacer(Modifier.width(12.dp))
+                Box(Modifier.fillMaxWidth(0.5f).height(11.dp).background(line))
+                Spacer(Modifier.weight(1f))
+                Box(Modifier.size(width = 20.dp, height = 8.dp).background(line))
+            }
+            Box(Modifier.fillMaxWidth().height(0.7.dp).background(hairline))
         }
     }
 }

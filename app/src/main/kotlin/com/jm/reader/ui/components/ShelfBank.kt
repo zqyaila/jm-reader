@@ -130,7 +130,6 @@ fun ShelfBank(
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
     val reduceMotion = !motion
-    val flight = LocalShelfFlight.current
 
     /**
      * Scroll position in books, unbounded - what a `Scrollable` would keep as pixels/pitch.
@@ -146,10 +145,6 @@ fun ShelfBank(
     var labelLane by remember { mutableIntStateOf(0) }
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var lastDetent by remember { mutableIntStateOf(0) }
-
-    var openingSlot by remember { mutableStateOf<Int?>(null) }
-    val opening = remember { Animatable(0f) }
-    var flying by remember { mutableStateOf(false) }
 
     val entrance = remember { Animatable(if (animateEntrance && motion) 0f else 1f) }
     LaunchedEffect(Unit) {
@@ -249,41 +244,13 @@ fun ShelfBank(
                     spine = spine,
                     cover = cover,
                     body = body,
-                    openingSlot = openingSlot,
-                    opening = { opening.value },
-                    onTapSlot = { slot, bounds ->
+                    onTapSlot = { slot, _ ->
                         val d = slot - displayFocus()
                         if (abs(d) < 0.35f) {
-                            val book = pool[slot]
-                            when {
-                                flight != null && book.cover.isNotBlank() && bounds.width > 0f &&
-                                    !flying -> {
-                                    flying = true
-                                    flight.launch(
-                                        ShelfFlightRequest(book.cover, bounds) {
-                                            flying = false
-                                            onOpen(book)
-                                        },
-                                    )
-                                }
-                                openingSlot == null -> {
-                                    openingSlot = slot
-                                    scope.launch {
-                                        opening.animateTo(
-                                            targetValue = 1f,
-                                            animationSpec = tween(
-                                                durationMillis = 160,
-                                                easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f),
-                                            ),
-                                        )
-                                        openingSlot = null
-                                        opening.snapTo(0f)
-                                        onOpen(book)
-                                    }
-                                }
-                            }
+                            // Straight in: the dossier's template slides in on the same frame,
+                            // which is the transition - no pre-roll, no delayed navigation.
+                            onOpen(pool[slot])
                         } else {
-                            // Tapping a neighbour brings it to the middle, like the reference.
                             flingJob?.cancel()
                             val target = logicalFocus + d.roundToInt()
                             flingJob = scope.launch {
@@ -438,8 +405,6 @@ private fun ShelfRow(
     spine: Float,
     cover: Float,
     body: Float,
-    openingSlot: Int?,
-    opening: () -> Float,
     onTapSlot: (Int, Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -475,8 +440,6 @@ private fun ShelfRow(
                         spine = spine,
                         cover = cover,
                         body = body,
-                        isOpening = slot == openingSlot,
-                        opening = opening,
                         onTap = { bounds -> onTapSlot(slot, bounds) },
                     )
                 }
@@ -632,8 +595,6 @@ private fun ShelfVolume(
     spine: Float,
     cover: Float,
     body: Float,
-    isOpening: Boolean,
-    opening: () -> Float,
     onTap: (Rect) -> Unit,
 ) {
     // A plain holder, not a MutableState: publishing root bounds through state would recompose
@@ -670,15 +631,6 @@ private fun ShelfVolume(
     Box(
         Modifier
             .size((shelfFootprint(spine, cover) + 8f).dp, (body + 8f).dp)
-            .graphicsLayer {
-                val p = if (isOpening) opening() else 0f
-                if (p > 0f) {
-                    transformOrigin = TransformOrigin(0.35f, 0.7f)
-                    scaleX = 1f + 0.05f * p
-                    scaleY = 1f + 0.05f * p
-                    alpha = 1f - 0.12f * p
-                }
-            },
     ) {
         // Front cover: receding up-right by the projection, carrying the file address at top and
         // bottom exactly as the reference prints it.
