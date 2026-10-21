@@ -570,10 +570,10 @@ private fun HomeHeader(
 private fun QuickLinks(navController: NavHostController) {
     val s = LocalAppStrings.current
     val primary = listOf(
+        // Check-in lives in 我的 -> 每日签到 only; the home row keeps discovery entries.
         Triple(s.quickWeek, "01 / WEEK") { navController.navigate(Routes.WEEK) },
-        Triple(s.quickDaily, "02 / DAILY") { navController.navigate(Routes.DAILY) },
-        Triple(s.quickHot, "03 / RANKING") { navController.navigate(Routes.HOT_TAGS) },
-        Triple(s.quickCategories, "04 / INDEX") { navController.navigate(Routes.CATEGORIES) },
+        Triple(s.quickHot, "02 / RANKING") { navController.navigate(Routes.HOT_TAGS) },
+        Triple(s.quickCategories, "03 / INDEX") { navController.navigate(Routes.CATEGORIES) },
     )
     val secondary = listOf(
         Triple(s.quickNovels, "05") { navController.navigate(Routes.NOVELS) },

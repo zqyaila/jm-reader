@@ -2,22 +2,29 @@ package com.jm.reader.ui.week
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,45 +36,49 @@ import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.components.AppTopBar
-import com.jm.reader.ui.components.ComicGrid
+import com.jm.reader.ui.components.ArchiveBookRow
+import com.jm.reader.ui.components.ArchiveSectionHeader
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.FilterPill
 import com.jm.reader.ui.components.FilterPillRow
 import com.jm.reader.ui.components.LoadingView
+import com.jm.reader.ui.components.ShelfBank
+import com.jm.reader.ui.components.ShelfItem
 import com.jm.reader.ui.nav.Routes
+import com.jm.reader.ui.BottomNavReserve
 import kotlinx.coroutines.launch
 
 internal data class WeekOption(val id: String, val title: String)
 
+/** Which chart the screen shows. 0 is the editorial 每周必看, 1-3 are time-based rankings. */
+private const val MODE_PICKS = 0
+private const val MODE_DAY = 1
+private const val MODE_WEEK = 2
+private const val MODE_MONTH = 3
+
+/** The API answers 20 rows per page; a short page means there is nothing behind it. */
+private const val PAGE_SIZE = 20
+
 /**
- * Weekly chart state, kept in a ViewModel rather than in `remember`.
+ * Weekly / daily / monthly chart state.
  *
- * This is the fix for the reported bug: tapping a comic pushed a detail destination on top, which
- * disposed the week screen's composition, so every `remember` - the loaded list, the selected
- * category, and the grid's scroll position - was thrown away. Coming back rebuilt the screen and
- * reloaded page 1 at scroll 0.
- *
- * `viewModel()` inside a navigation destination is scoped to that destination's back-stack entry,
- * so it survives being covered by the detail screen and is cleared only when the week screen is
- * actually popped. Holding the *items* here (not just the index) matters: if the list were still
- * empty on return, `rememberLazyGridState(initialIndex = ...)` would be clamped to 0 before the
- * network response arrived, and the position would be lost anyway.
+ * Kept in a ViewModel owned by the destination so opening a comic and coming back preserves the
+ * chart, the selected week and the scroll position instead of reloading page 1.
  */
 internal class WeekViewModel : ViewModel() {
+    val mode = mutableIntStateOf(MODE_PICKS)
     val categories = mutableStateOf<List<WeekOption>>(emptyList())
     val types = mutableStateOf<List<WeekOption>>(emptyList())
     val selectedCat = mutableStateOf("")
     val selectedType = mutableStateOf("")
     val items = mutableStateOf<List<ComicListItem>>(emptyList())
     val loading = mutableStateOf(true)
+    val loadingMore = mutableStateOf(false)
     val error = mutableStateOf<String?>(null)
 
-    /** Set once the first load has been requested, so re-entering does not refetch. */
+    var page = 0
+    var endReached = false
     var loaded = false
-
-    /** Last visible cell, captured when the screen leaves composition. */
-    var firstVisibleIndex = 0
-    var firstVisibleOffset = 0
 }
 
 @Composable
@@ -76,134 +87,257 @@ fun WeekScreen(navController: NavHostController) {
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
     val vm: WeekViewModel = viewModel()
+    var mode by vm.mode
     var categories by vm.categories
     var types by vm.types
     var selectedCat by vm.selectedCat
     var selectedType by vm.selectedType
     var items by vm.items
     var loading by vm.loading
+    var loadingMore by vm.loadingMore
     var error by vm.error
 
     fun options(key: String, data: org.json.JSONObject): List<WeekOption> =
         data.optJSONArray(key)?.let { ja ->
             (0 until ja.length()).mapNotNull { i ->
-                ja.optJSONObject(i)?.let { WeekOption(it.optString("id"), it.optString("title")) }
+                ja.optJSONObject(i)?.let { o ->
+                    // `/week` calls the label `time` ("2026-10-13 ~ 10-19"); the type tabs use
+                    // `title`. Reading only `title` is why the week boxes were blank.
+                    WeekOption(
+                        id = o.optString("id"),
+                        title = o.optString("time").ifBlank { o.optString("title") },
+                    )
+                }
             }
         } ?: emptyList()
 
-    suspend fun loadFilter(cat: String, type: String) {
-        loading = true
-        when (val r = repo.getWeekFilter(cat, type)) {
-            is RepoResult.Ok -> { items = r.data; loading = false; error = null }
-            is RepoResult.Err -> { error = r.message; loading = false }
+    suspend fun loadPage(reset: Boolean) {
+        if (loading || loadingMore) return
+        if (!reset && vm.endReached) return
+        if (reset) {
+            vm.page = 0
+            vm.endReached = false
+            items = emptyList()
+            error = null
+            loading = true
+        } else {
+            loadingMore = true
         }
+        val next = if (vm.page == 0) 1 else vm.page + 1
+        val result = if (mode == MODE_PICKS) {
+            repo.getWeekFilter(selectedCat, selectedType, next)
+        } else {
+            repo.ranking(
+                when (mode) {
+                    MODE_DAY -> "d"
+                    MODE_WEEK -> "w"
+                    else -> "m"
+                },
+                next,
+            )
+        }
+        when (result) {
+            is RepoResult.Ok -> {
+                val page = result.data
+                items = if (reset) page else (items + page).distinctBy { it.id }
+                vm.page = next
+                // A full page may still be the last one; the next request returning empty will
+                // flip the flag. A short page is definitive.
+                vm.endReached = page.size < PAGE_SIZE
+                error = null
+            }
+            is RepoResult.Err -> if (reset) error = result.message
+        }
+        loading = false
+        loadingMore = false
     }
 
-    suspend fun loadWeek() {
-        loading = true
+    suspend fun loadConfig() {
         when (val r = repo.getWeek()) {
             is RepoResult.Ok -> {
-                val cats = options("categories", r.data)
-                val typs = options("type", r.data)
-                categories = cats
-                types = typs
-                selectedCat = cats.firstOrNull()?.id ?: ""
-                selectedType = typs.getOrNull(2)?.id ?: typs.firstOrNull()?.id ?: ""
-                error = null
-                loadFilter(selectedCat, selectedType)
+                categories = options("categories", r.data)
+                types = options("type", r.data)
+                selectedCat = categories.firstOrNull()?.id.orEmpty()
+                selectedType = types.firstOrNull()?.id.orEmpty()
+                loadPage(reset = true)
             }
-            is RepoResult.Err -> { error = r.message; loading = false }
+            is RepoResult.Err -> {
+                error = r.message
+                loading = false
+            }
         }
     }
 
     LaunchedEffect(Unit) {
-        // Coming back from a comic must not reload: the list, filters and scroll are all still here.
         if (vm.loaded && vm.error.value == null) return@LaunchedEffect
         vm.loaded = true
-        loadWeek()
+        loadConfig()
     }
 
-    // Seeded with the position captured on the way out, so the reader lands where they left.
-    val gridState = rememberLazyGridState(
-        initialFirstVisibleItemIndex = vm.firstVisibleIndex,
-        initialFirstVisibleItemScrollOffset = vm.firstVisibleOffset,
-    )
-    DisposableEffect(gridState) {
-        onDispose {
-            vm.firstVisibleIndex = gridState.firstVisibleItemIndex
-            vm.firstVisibleOffset = gridState.firstVisibleItemScrollOffset
-        }
+    val listState = rememberLazyListState()
+    // Auto-load when the tail is within three rows, so a 20+ list is continuous instead of
+    // requiring a tap on every page.
+    LaunchedEffect(listState, items.size) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { last ->
+                if (last != null && !loading && !loadingMore && !vm.endReached &&
+                    last >= items.size + 4
+                ) {
+                    scope.launch { loadPage(reset = false) }
+                }
+            }
     }
 
     Scaffold(topBar = { AppTopBar(s.weekRanking, onBack = { navController.popBackStack() }) }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            Text(
-                text = s.weekHint,
-                fontSize = 12.5.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
-            )
-
-            if (categories.isNotEmpty()) {
-                FilterPillRow(contentPadding = PaddingValues(horizontal = 16.dp)) {
-                    categories.forEach { cat ->
-                        FilterPill(
-                            text = cat.title,
-                            selected = selectedCat == cat.id,
-                            onClick = {
-                                selectedCat = cat.id
-                                scope.launch {
-                                    gridState.scrollToItem(0)
-                                    loadFilter(cat.id, selectedType)
-                                }
-                            },
-                        )
-                    }
-                }
-            }
-
-            if (types.isNotEmpty()) {
-                FilterPillRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        Box(Modifier.fillMaxSize().padding(padding)) {
+            when {
+                loading && items.isEmpty() -> LoadingView()
+                error != null && items.isEmpty() -> ErrorView(
+                    error!!,
+                    onRetry = { scope.launch { if (mode == MODE_PICKS && categories.isEmpty()) loadConfig() else loadPage(true) } },
+                )
+                else -> LazyColumn(
+                    Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = BottomNavReserve,
+                    ),
                 ) {
-                    types.forEach { t ->
-                        FilterPill(
-                            text = t.title,
-                            selected = selectedType == t.id,
-                            subtle = selectedType != t.id,
-                            onClick = {
-                                selectedType = t.id
-                                scope.launch {
-                                    gridState.scrollToItem(0)
-                                    loadFilter(selectedCat, t.id)
+                    item(key = "modes") {
+                        FilterPillRow(contentPadding = PaddingValues(vertical = 6.dp)) {
+                            val modes = listOf(
+                                MODE_PICKS to s.weekRanking,
+                                MODE_DAY to s.rankDaily,
+                                MODE_WEEK to s.rankWeekly,
+                                MODE_MONTH to s.rankMonthly,
+                            )
+                            modes.forEach { (value, label) ->
+                                FilterPill(
+                                    text = label,
+                                    selected = mode == value,
+                                    onClick = {
+                                        if (mode == value) return@FilterPill
+                                        mode = value
+                                        scope.launch { loadPage(reset = true) }
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    if (mode == MODE_PICKS) {
+                        if (categories.isNotEmpty()) {
+                            item(key = "weeks") {
+                                FilterPillRow(contentPadding = PaddingValues(vertical = 4.dp)) {
+                                    categories.forEach { cat ->
+                                        FilterPill(
+                                            text = cat.title.ifBlank { "—" },
+                                            selected = selectedCat == cat.id,
+                                            subtle = selectedCat != cat.id,
+                                            onClick = {
+                                                selectedCat = cat.id
+                                                scope.launch { loadPage(reset = true) }
+                                            },
+                                        )
+                                    }
                                 }
+                            }
+                        }
+                        if (types.isNotEmpty()) {
+                            item(key = "types") {
+                                FilterPillRow(contentPadding = PaddingValues(vertical = 4.dp)) {
+                                    types.forEach { t ->
+                                        FilterPill(
+                                            text = t.title.ifBlank { t.id },
+                                            selected = selectedType == t.id,
+                                            subtle = selectedType != t.id,
+                                            onClick = {
+                                                selectedType = t.id
+                                                scope.launch { loadPage(reset = true) }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    item(key = "where") {
+                        Text(
+                            text = when (mode) {
+                                MODE_PICKS -> s.weekHint
+                                MODE_DAY -> s.rankDaily
+                                MODE_WEEK -> s.rankWeekly
+                                else -> s.rankMonthly
                             },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
                         )
                     }
-                }
-            }
 
-            Box(Modifier.fillMaxSize()) {
-                when {
-                    loading && items.isEmpty() -> LoadingView()
-                    error != null && items.isEmpty() -> ErrorView(
-                        error!!,
-                        onRetry = { scope.launch { loadFilter(selectedCat, selectedType) } },
-                    )
-                    items.isEmpty() -> ErrorView(
-                        s.noResult,
-                        onRetry = { scope.launch { loadFilter(selectedCat, selectedType) } },
-                    )
-                    else -> ComicGrid(
-                        items = items,
-                        repo = repo,
-                        state = gridState,
-                        ranked = true,
-                        columnWidth = 100.dp,
-                        onItemClick = { navController.navigate(Routes.comicDetail(it.id)) },
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
-                    )
+                    if (items.isNotEmpty()) {
+                        item(key = "shelf") {
+                            ShelfBank(
+                                items = items.take(10).map {
+                                    ShelfItem(
+                                        id = it.id,
+                                        title = it.name,
+                                        subtitle = listOfNotNull(it.author, it.category?.title)
+                                            .filter { part -> part.isNotBlank() }
+                                            .joinToString(" · "),
+                                        cover = it.image.takeIf { url -> url.startsWith("http") }
+                                            ?: repo.comicCover(it.id, it.updateAt),
+                                    )
+                                },
+                                onOpen = { navController.navigate(Routes.comicDetail(it.id)) },
+                                modifier = Modifier.padding(bottom = 6.dp),
+                            )
+                        }
+                        item(key = "list-title") {
+                            val weekLabel = categories.firstOrNull { it.id == selectedCat }?.title.orEmpty()
+                            val title = when (mode) {
+                                MODE_PICKS -> if (weekLabel.isBlank()) s.weekRanking else weekLabel
+                                MODE_DAY -> s.rankDaily
+                                MODE_WEEK -> s.rankWeekly
+                                else -> s.rankMonthly
+                            }
+                            ArchiveSectionHeader(
+                                code = if (mode == MODE_PICKS) "01 / WEEK PICKS" else "02 / RANKING",
+                                title = title,
+                                trailing = items.size.toString(),
+                            )
+                        }
+                        val rows = items
+                        items(rows, key = { "w-" + it.id }) { item ->
+                            ArchiveBookRow(
+                                id = item.id,
+                                title = item.name,
+                                author = item.author.orEmpty().ifBlank { item.category?.title.orEmpty() },
+                                cover = item.image.takeIf { url -> url.startsWith("http") }
+                                    ?: repo.comicCover(item.id, item.updateAt),
+                                onClick = { navController.navigate(Routes.comicDetail(item.id)) },
+                            )
+                        }
+                    }
+
+                    item(key = "more") {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                            when {
+                                loadingMore -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                                !vm.endReached -> TextButton(onClick = { scope.launch { loadPage(false) } }) {
+                                    Text(s.loadMore)
+                                }
+                                items.isNotEmpty() -> Text(
+                                    s.noMore,
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

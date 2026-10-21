@@ -197,11 +197,28 @@ class AppRepository(
     suspend fun getWeek(): RepoResult<JSONObject> =
         api.get("week").toRepoObj()
 
-    /** GET /week/filter?id=&type= */
-    suspend fun getWeekFilter(id: String, type: String): RepoResult<List<ComicListItem>> =
-        api.get("week/filter", mapOf("id" to id, "type" to type)).toRepoList { o, arr ->
+    /** GET /week/filter?id=&type=&page= - page 1 is the newest week's selection. */
+    suspend fun getWeekFilter(id: String, type: String, page: Int = 1): RepoResult<List<ComicListItem>> =
+        api.get("week/filter", mapOf("id" to id, "type" to type, "page" to page)).toRepoList { o, arr ->
             listFromObjOrArr(o, arr)
         }
+
+    /**
+     * Time-based ranking: `/categories/filter` with `time = d|w|m`, all categories, sorted by views.
+     *
+     * This is the same endpoint the official clients call for "day / week / month" charts; the
+     * `/week` endpoint above is the editorial 每周必看 selection, which is a different thing.
+     */
+    suspend fun ranking(time: String, page: Int = 1): RepoResult<List<ComicListItem>> =
+        api.get(
+            "categories/filter",
+            mapOf(
+                "time" to time,
+                "category" to "all",
+                "order_by" to "mv",
+                "page" to page,
+            ),
+        ).toRepoList { o, arr -> listFromObjOrArr(o, arr) }
 
     /** GET /daily?user_id= */
     suspend fun getDaily(userId: String): RepoResult<JSONObject> =
