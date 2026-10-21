@@ -65,8 +65,10 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   `0.84·cover·w·(1.24 − 0.24w)` and the lift. Neighbours follow `railY(d) = 2.5d + 0.45d²`, and the
   lanes wrap around, so it reads as a physical wall of books rather than a cover banner. The loop is
   endless: sliding past the first book brings back the last, and the coordinate is re-seated after
-  every gesture so a long fling cannot drift. Tap a cover or a spine to open it - the centred book
-  lifts for 160 ms before the route slides in, and an off-centre tap centres it first. Covers are
+  every gesture so a long fling cannot drift. Tap a cover or a spine to open it: the cover itself
+  flies to the dossier's cover plate (300 ms, with the shelf dimming underneath) while the detail
+  page fades and settles in beneath it, so the hand-off reads as one movement rather than a flight
+  followed by a page change; an off-centre tap centres its book first. Covers are
   decoded at their drawn size, so dragging no longer re-decodes full-resolution art. The bank
   assembles from depth over 720 ms. **The bank is a header: the normal grid / list stays below**, and
   history keeps its plain list. The button beside the title switches the bank off, and remembers
