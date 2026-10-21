@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -48,11 +50,13 @@ import com.jm.reader.ui.theme.glassClickable
 /**
  * Monospace file address, optionally inverted into a solid ink plaque.
  *
- * The plaque's foreground is `onPrimary`, not `background`: it is the scheme's own definition of
- * "content drawn on a solid ink fill", and it stays legible in every theme. Using `background`
- * relied on the two happening to be opposites; where they are close the address vanishes into the
- * block. A hairline around the block keeps its edge readable on paper of any tone, and the address
- * is set a point larger than a plain code so it survives being the smallest line on the page.
+ * The plaque is filled and lettered from one explicit pair - `onSurface` for the fill,
+ * `surface` for the text - so the two can never collapse into each other, which is what happened
+ * when the fill came from the theme's `background` and the text from a colour that happened to
+ * match it. The fill is drawn with `drawBehind` rather than `background`, because a background
+ * modifier nested behind caller padding has already been reported as an invisible plaque twice;
+ * a draw call on the block's own canvas cannot be lost that way. The hairline keeps the block's
+ * edge readable on paper of any tone.
  */
 @Composable
 fun ArchiveCode(
@@ -61,34 +65,36 @@ fun ArchiveCode(
     inverse: Boolean = false,
     color: Color? = null,
 ) {
-    val tint = color ?: if (inverse) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    val label = Text(
-        text = text,
-        style = if (inverse) {
-            CodeTextStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        } else {
-            CodeTextStyle
-        },
-        color = tint,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = if (inverse) Modifier.padding(horizontal = 7.dp, vertical = 4.dp) else Modifier,
-    )
+    val scheme = MaterialTheme.colorScheme
     if (inverse) {
+        val fill = scheme.onSurface
+        val ink = scheme.surface
         Box(
             modifier
-                .background(MaterialTheme.colorScheme.onSurface, RoundedCornerShape(2.dp))
-                .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)),
+                .heightIn(min = 24.dp)
+                .drawBehind { drawRoundRect(fill, cornerRadius = CornerRadius(2.dp.toPx())) }
+                .border(0.5.dp, scheme.outline, RoundedCornerShape(2.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            label
+            Text(
+                text = text,
+                style = CodeTextStyle.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
+                color = color ?: ink,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+            )
         }
     } else {
-        Box(modifier) { label }
+        Box(modifier) {
+            Text(
+                text = text,
+                style = CodeTextStyle,
+                color = color ?: scheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

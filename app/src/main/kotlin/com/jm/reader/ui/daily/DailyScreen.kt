@@ -363,7 +363,14 @@ private fun SignCalendar(weeks: List<List<DayCell>>, modifier: Modifier = Modifi
                         Text(
                             day.label,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (signed) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            // A signed cell is filled with `primary`; in the dark scheme that fill is
+                            // off-white, so hard-coded white text vanished into it. `onPrimary` is
+                            // whatever the scheme says belongs on that fill.
+                            color = if (signed) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 }
