@@ -24,6 +24,10 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
 - 🔎 **Better search** — besides keyword search: **search by author** (results grouped per author)
   and **jump straight to a comic by its JM id**; cards show the author, the detail page links
   authors / tags to a search, and results page in as you scroll
+- 📈 **Charts** - 每周必看 is grouped by week (each pill prints the week's date range) with a
+  matching section title, 20 rows a page and automatic paging at the tail; day / week / month
+  charts use `/categories/filter?time=d|w|m&order_by=mv`. Daily check-in now lives under
+  "Me -> Daily check-in" only
 - 📚 **Native reader** — vertical / horizontal paging, chapter switching, progress slider,
   automatic **image de-scrambling** (some album pages are served with reversed horizontal
   strips; this app restores them). Reading tools: tap the left third to go back, the right third
