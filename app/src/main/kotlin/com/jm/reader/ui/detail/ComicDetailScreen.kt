@@ -207,7 +207,11 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                 // Never a spinner: the dossier's own layout slides in first and the fields fill
                 // it when they arrive. A cover flight lands on the plate below while this is
                 // still on screen, so the page reads as already open rather than as waiting.
-                state.loading && detail == null -> DossierSkeleton()
+                state.loading && detail == null -> DossierSkeleton(
+                    // The same file the flight just carried in; `v=0` only skips the cache-buster,
+                    // and a miss simply leaves the grey plate.
+                    cover = repo.comicCoverDetail(id, 0L),
+                )
                 state.error != null && detail == null -> ErrorView(state.error!!, onRetry = { scope.launch { load() } })
                 detail == null -> ErrorView(s.loadFail, onRetry = { scope.launch { load() } })
                 else -> {
@@ -500,7 +504,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
  * recomposition of the blocks), which is the quietest possible "still loading" cue.
  */
 @Composable
-private fun DossierSkeleton() {
+private fun DossierSkeleton(cover: String) {
     val transition = rememberInfiniteTransition(label = "dossierSkeleton")
     val alpha by transition.animateFloat(
         initialValue = 0.28f,
@@ -522,7 +526,14 @@ private fun DossierSkeleton() {
                     .border(0.7.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))
                     .padding(3.dp)
                     .background(block, RoundedCornerShape(1.dp)),
-            )
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current).data(cover).build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(1.dp)),
+                )
+            }
             Column(Modifier.weight(1f).padding(start = 16.dp)) {
                 Box(Modifier.size(width = 64.dp, height = 16.dp).background(block))
                 Spacer(Modifier.height(10.dp))

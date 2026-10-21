@@ -2,6 +2,9 @@ package com.jm.reader.ui
 
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
@@ -21,6 +24,9 @@ import androidx.navigation.NavType
 import com.jm.reader.JMApplication
 import com.jm.reader.ui.strings.AppStrings
 import com.jm.reader.ui.blogs.BlogsScreen
+import com.jm.reader.ui.components.LocalShelfFlight
+import com.jm.reader.ui.components.ShelfFlightController
+import com.jm.reader.ui.components.ShelfFlightOverlay
 import com.jm.reader.ui.category.CategoriesScreen
 import com.jm.reader.ui.daily.DailyScreen
 import com.jm.reader.ui.detail.ComicDetailScreen
@@ -69,7 +75,11 @@ private fun AppContent(
     strings: AppStrings,
     theme: AppTheme,
 ) {
+    // The cover flight is drawn above the navigation host: a shelf inside a LazyColumn cannot
+    // paint outside its row, and the flight has to stay visible while the old page leaves.
+    val shelfFlight = remember { ShelfFlightController() }
     CompositionLocalProvider(
+        LocalShelfFlight provides shelfFlight,
         LocalRepository provides app.repository,
         LocalSession provides app.session,
         LocalLanguageManager provides app.languageManager,
@@ -88,6 +98,7 @@ private fun AppContent(
         Box(Modifier.fillMaxSize()) {
             AppBackdrop()
             AppNavHost(navController)
+            ShelfFlightOverlay(shelfFlight)
         }
         // Show a copyable crash report if the previous run crashed.
         CrashReportOverlay(app)
@@ -155,9 +166,30 @@ fun AppNavHost(navController: NavHostController) {
         composable(Routes.BLOGS) { BlogsScreen(navController) }
         composable(Routes.FORUM) { ForumScreen(navController) }
 
+        // Opened through the cover flight: the page fades in around the already-landed cover
+        // instead of sliding it away from the slot the flight targeted. The page it came from
+        // keeps the stack slide, so it visibly recedes.
         composable(
             Routes.COMIC_DETAIL,
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            enterTransition = {
+                fadeIn(tween(240)) + scaleIn(initialScale = 0.99f, animationSpec = tween(240))
+            },
+            exitTransition = {
+                slideOutHorizontally(
+                    animationSpec = tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit),
+                    targetOffsetX = { -it / 3 },
+                )
+            },
+            popEnterTransition = {
+                slideInHorizontally(
+                    animationSpec = tween(ArchiveMotion.EnterMs, easing = ArchiveMotion.Enter),
+                    initialOffsetX = { -it / 3 },
+                )
+            },
+            popExitTransition = {
+                fadeOut(tween(200)) + scaleOut(targetScale = 0.99f, animationSpec = tween(200))
+            },
         ) { entry ->
             ComicDetailScreen(navController, entry.arguments?.getString("id").orEmpty())
         }

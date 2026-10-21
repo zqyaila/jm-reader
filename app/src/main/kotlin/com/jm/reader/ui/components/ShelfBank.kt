@@ -144,6 +144,8 @@ fun ShelfBank(
     // so a drag does not recompose them every frame.
     var labelLane by remember { mutableIntStateOf(0) }
     var flingJob by remember { mutableStateOf<Job?>(null) }
+    var flying by remember { mutableStateOf(false) }
+    val flight = LocalShelfFlight.current
     var lastDetent by remember { mutableIntStateOf(0) }
 
     val entrance = remember { Animatable(if (animateEntrance && motion) 0f else 1f) }
@@ -244,12 +246,24 @@ fun ShelfBank(
                     spine = spine,
                     cover = cover,
                     body = body,
-                    onTapSlot = { slot, _ ->
+                    onTapSlot = { slot, bounds ->
                         val d = slot - displayFocus()
                         if (abs(d) < 0.35f) {
-                            // Straight in: the dossier's template slides in on the same frame,
-                            // which is the transition - no pre-roll, no delayed navigation.
-                            onOpen(pool[slot])
+                            val book = pool[slot]
+                            // The cover detaches straight (its layout rect is unsheared), flies to
+                            // the dossier's plate in the top-left, and the page fades in beneath
+                            // it; the shelf behind recedes with the route's own exit.
+                            if (flight != null && book.cover.isNotBlank() && bounds.width > 0f && !flying) {
+                                flying = true
+                                flight.launch(
+                                    ShelfFlightRequest(book.cover, bounds) {
+                                        flying = false
+                                        onOpen(book)
+                                    },
+                                )
+                            } else {
+                                onOpen(book)
+                            }
                         } else {
                             flingJob?.cancel()
                             val target = logicalFocus + d.roundToInt()
