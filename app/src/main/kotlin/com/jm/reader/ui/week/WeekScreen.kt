@@ -72,11 +72,14 @@ internal class WeekViewModel : ViewModel() {
     val selectedCat = mutableStateOf("")
     val selectedType = mutableStateOf("")
     val items = mutableStateOf<List<ComicListItem>>(emptyList())
-    val loading = mutableStateOf(true)
+    // Starts false: `loadPage` refuses to run while a load is in flight, and starting it true
+    // made that guard swallow the very first request - the screen sat on its spinner forever.
+    val loading = mutableStateOf(false)
     val loadingMore = mutableStateOf(false)
     val error = mutableStateOf<String?>(null)
 
-    var page = 0
+    /** Last page requested. `/week/filter` is 0-based, `/categories/filter` is 1-based. */
+    var page = -1
     var endReached = false
     var loaded = false
 }
@@ -115,7 +118,7 @@ fun WeekScreen(navController: NavHostController) {
         if (loading || loadingMore) return
         if (!reset && vm.endReached) return
         if (reset) {
-            vm.page = 0
+            vm.page = if (mode == MODE_PICKS) -1 else 0
             vm.endReached = false
             items = emptyList()
             error = null
@@ -123,7 +126,9 @@ fun WeekScreen(navController: NavHostController) {
         } else {
             loadingMore = true
         }
-        val next = if (vm.page == 0) 1 else vm.page + 1
+        // The two endpoints count pages differently: `/week/filter` starts at 0 (that is what the
+        // reference client sends), `/categories/filter` starts at 1.
+        val next = if (mode == MODE_PICKS) vm.page + 1 else maxOf(vm.page + 1, 1)
         val result = if (mode == MODE_PICKS) {
             repo.getWeekFilter(selectedCat, selectedType, next)
         } else {
