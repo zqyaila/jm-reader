@@ -39,6 +39,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +55,7 @@ import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalRepository
+import com.jm.reader.ui.components.ArchiveSectionHeader
 import com.jm.reader.ui.strings.AppStrings
 import com.jm.reader.ui.theme.GlassShape
 import com.jm.reader.ui.theme.GlassShapeSmall
@@ -249,7 +252,7 @@ fun LazyListScope.commentsSection(
                 onReply = { ui.replyTarget = it },
                 onLike = onLike,
                 onOpenAlbum = onOpenAlbum,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = 24.dp),
             )
         }
     }
@@ -270,22 +273,16 @@ fun LazyListScope.commentsSection(
 
 @Composable
 private fun CommentsHeader(title: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Icon(
-            Icons.Filled.ChatBubbleOutline,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-        )
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    }
+    // Same printed rule as every other section on the page: the comment block is a margin note in
+    // the dossier, not a second app with its own title treatment.
+    ArchiveSectionHeader(
+        code = "05 / MARGINALIA",
+        title = title,
+        modifier = Modifier.padding(horizontal = 24.dp),
+    )
 }
 
-/** One top-level comment, in its own glass pane. */
+/** One top-level comment: a ruled block, not a pane - forty panes turned the thread into a wall. */
 @Composable
 private fun CommentThread(
     comment: CommentItem,
@@ -297,15 +294,21 @@ private fun CommentThread(
     onOpenAlbum: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Flat pane (no drop shadow): the spec warns against a full glass effect on every row of a
-    // long list, and a 20-comment thread would otherwise pay for 20 shadows. The fog, rim and
-    // specular alone still separate it from the canvas, and replies nest inside this same pane
-    // rather than stacking a second glass layer on top of it.
+    // The theme's hairline, taken during composition: reading the scheme inside `drawBehind` is
+    // not allowed, and a hard-coded light rule turned into a white grid in the dark theme.
+    val hairline = MaterialTheme.colorScheme.outlineVariant
     Column(
         modifier
             .fillMaxWidth()
-            .glassSurface(shape = GlassShape, elevation = 0.dp)
-            .padding(10.dp),
+            .drawBehind {
+                drawLine(
+                    color = hairline,
+                    start = Offset(0f, size.height),
+                    end = Offset(size.width, size.height),
+                    strokeWidth = 0.7.dp.toPx(),
+                )
+            }
+            .padding(vertical = 11.dp),
     ) {
         CommentBranch(
             comment = comment,
@@ -512,7 +515,7 @@ private fun CommentBody(
 
 @Composable
 private fun CommentAvatar(url: String?, size: Dp) {
-    val shape = CircleShape
+    val shape = RoundedCornerShape(2.dp)
     Box(
         Modifier
             .size(size)
@@ -552,7 +555,7 @@ private fun CommentComposer(
 ) {
     val s: AppStrings = LocalAppStrings.current
 
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp)) {
         ui.replyTarget?.let { target ->
             Row(
                 Modifier.fillMaxWidth().padding(bottom = 4.dp),
@@ -572,6 +575,7 @@ private fun CommentComposer(
             Button(
                 onClick = onLoginRequired,
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(3.dp),
             ) { Text(s.commentLoginRequired) }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -581,9 +585,10 @@ private fun CommentComposer(
                     placeholder = { Text(s.commentHint, style = MaterialTheme.typography.bodySmall) },
                     modifier = Modifier.weight(1f),
                     maxLines = 4,
-                    shape = GlassShapeSmall,
+                    shape = RoundedCornerShape(3.dp),
                 )
                 Button(
+                    shape = RoundedCornerShape(3.dp),
                     enabled = ui.draft.isNotBlank() && !ui.posting,
                     onClick = {
                         val text = ui.draft

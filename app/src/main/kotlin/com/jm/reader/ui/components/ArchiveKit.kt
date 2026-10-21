@@ -67,7 +67,10 @@ fun ArchiveCode(
         modifier = if (inverse) Modifier.padding(horizontal = 6.dp, vertical = 3.dp) else Modifier,
     )
     if (inverse) {
-        Box(Modifier.background(MaterialTheme.colorScheme.onSurface), contentAlignment = Alignment.Center) {
+        Box(
+            modifier.background(MaterialTheme.colorScheme.onSurface),
+            contentAlignment = Alignment.Center,
+        ) {
             label
         }
     } else {
@@ -87,6 +90,8 @@ fun ArchiveSectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     subtitle: String = "",
+    /** Right-aligned count or address, e.g. the number of chapters. Never clickable. */
+    trailing: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
@@ -123,6 +128,10 @@ fun ArchiveSectionHeader(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false),
             )
+            if (trailing != null) {
+                Spacer(Modifier.width(8.dp))
+                ArchiveCode(trailing)
+            }
             if (actionLabel != null && onAction != null) {
                 Spacer(Modifier.width(10.dp))
                 Text(
