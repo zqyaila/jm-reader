@@ -304,7 +304,7 @@ fun HomeScreen(
 
                     if (promote.isNotEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(title = s.forYou, code = "01 / ARCHIVE")
+                            SectionHeader(title = s.forYou, code = "01 / FEATURED")
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             // The same projected bank as the phone build, centred on a wide window.

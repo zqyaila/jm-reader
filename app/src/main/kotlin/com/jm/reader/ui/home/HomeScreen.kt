@@ -352,6 +352,9 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
                 }
 
                 if (state.promote.isNotEmpty()) {
+                    item(key = "shelf-header") {
+                        ArchiveSectionHeader(code = "01 / FEATURED", title = s.forYou)
+                    }
                     item(key = "shelf") {
                         ShelfBank(
                             items = state.promote.take(10).map {
@@ -413,7 +416,7 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
 
                 if (recentItems.isNotEmpty()) {
                     item(key = "recent-header") {
-                        ArchiveSectionHeader(code = "01 / READING LOG", title = s.recentReads)
+                        ArchiveSectionHeader(code = "02 / READING LOG", title = s.recentReads)
                     }
                     item(key = "recent") {
                         Column {
@@ -432,7 +435,7 @@ fun HomeScreen(navController: NavHostController, modifier: Modifier = Modifier) 
 
                 item(key = "latest-header") {
                     ArchiveSectionHeader(
-                        code = "02 / CATALOG",
+                        code = "03 / CATALOG",
                         title = s.latest,
                         actionLabel = s.viewAll,
                         onAction = { navController.navigate(Routes.comicList("latest", s.latest)) },

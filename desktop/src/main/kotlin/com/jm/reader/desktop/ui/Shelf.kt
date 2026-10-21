@@ -386,9 +386,13 @@ internal fun shelfOrigin(cover: Float, height: Float, weight: Float): Offset {
 
 private fun faceMatrix(xScale: Float, yShear: Float, dx: Float, dy: Float): Matrix =
     Matrix().apply {
-        translate(dx, dy)
-        this[0, 0] = xScale
-        this[1, 0] = yShear
+        // Use the named slots, not [row, column]: Compose stores the 4x4 column-major, so
+        // `this[1, 0]` lands in the SkewX slot and leans a book sideways instead of sloping it
+        // back. SkewY is the "y += k·x" term the projection actually needs.
+        values[Matrix.ScaleX] = xScale
+        values[Matrix.SkewY] = yShear
+        values[Matrix.TranslateX] = dx
+        values[Matrix.TranslateY] = dy
     }
 
 private fun Modifier.projectFace(xScale: Float, yShear: Float, dx: Float, dy: Float): Modifier =
@@ -420,10 +424,10 @@ private fun ShelfScene(
 
     // Recompute the mounted slots only when the centre crosses a book, never per drag pixel.
     val laneAnchor by remember { derivedStateOf { focus().roundToInt() } }
+    // A window of lanes around the centre, not the bare item list: the bank is a loop, so books
+    // to the left of the first file are the last files, and the extracted one is always centred.
     val activeSlots = remember(laneAnchor, count) {
-        (0 until count).map { index ->
-            index + ((laneAnchor - index) / count.toFloat()).roundToInt() * count
-        }
+        if (count < 2) listOf(0) else ((laneAnchor - 9)..(laneAnchor + 9)).toList()
     }
     val slotsRef by rememberUpdatedState(activeSlots)
 

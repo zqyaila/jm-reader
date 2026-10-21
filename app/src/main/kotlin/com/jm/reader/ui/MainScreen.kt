@@ -50,6 +50,7 @@ import com.jm.reader.ui.home.HomeScreen
 import com.jm.reader.ui.library.LibraryScreen
 import com.jm.reader.ui.member.MemberScreen
 import com.jm.reader.ui.theme.AppMotion
+import com.jm.reader.ui.theme.ArchiveMotion
 import com.jm.reader.ui.theme.AppTheme
 import com.jm.reader.ui.theme.GlassBar
 import com.jm.reader.ui.theme.LocalAppTheme
@@ -190,15 +191,27 @@ private fun GlassBottomNav(
                             // 24dp: Material icons are drawn on a 24dp grid.
                             modifier = Modifier.size(23.dp),
                         )
-                        Text(
-                            label,
-                            fontSize = 10.sp,
-                            lineHeight = 13.sp,
-                            fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-                            color = tint,
-                            maxLines = 1,
-                            modifier = Modifier.padding(top = 1.dp),
-                        )
+                        // The reference dock labels only the selected tab: three captions under
+                        // three icons turn a floating pill into a second toolbar.
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = active,
+                            enter = androidx.compose.animation.fadeIn(
+                                androidx.compose.animation.core.tween(ArchiveMotion.ContactMs),
+                            ) + androidx.compose.animation.expandVertically(),
+                            exit = androidx.compose.animation.fadeOut(
+                                androidx.compose.animation.core.tween(ArchiveMotion.ExitMs),
+                            ),
+                        ) {
+                            Text(
+                                label,
+                                fontSize = 10.sp,
+                                lineHeight = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = tint,
+                                maxLines = 1,
+                                modifier = Modifier.padding(top = 1.dp),
+                            )
+                        }
                     }
                 }
             }
