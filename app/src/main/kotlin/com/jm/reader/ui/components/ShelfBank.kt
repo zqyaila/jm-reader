@@ -50,6 +50,9 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
@@ -136,6 +139,9 @@ fun ShelfBank(
     // off the shelf" rather than as the page swapping under the finger.
     var openingSlot by remember { mutableStateOf<Int?>(null) }
     val opening = remember { Animatable(0f) }
+    // Guards a second tap while the cover is already in the air.
+    var flying by remember { mutableStateOf(false) }
+    val flight = LocalShelfFlight.current
     var flingJob by remember { mutableStateOf<Job?>(null) }
     var lastDetent by remember { mutableIntStateOf(0) }
 
@@ -242,25 +248,41 @@ fun ShelfBank(
                         body = body,
                         openingSlot = openingSlot,
                         opening = { opening.value },
-                        onTapSlot = { slot ->
+                        onTapSlot = { slot, bounds ->
                             if (abs(slot - focus) < 0.35f) {
                                 val book = items[Math.floorMod(slot, count)]
-                                if (openingSlot == null) {
-                                    openingSlot = slot
-                                    scope.launch {
-                                        opening.animateTo(
-                                            targetValue = 1f,
-                                            animationSpec = tween(
-                                                durationMillis = 160,
-                                                easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f),
-                                            ),
+                                when {
+                                    // Preferred: hand the cover to the root overlay, which flies it
+                                    // to the dossier's cover slot while the page fades in beneath.
+                                    flight != null && book.cover.isNotBlank() && bounds.width > 0f &&
+                                        !flying -> {
+                                        flying = true
+                                        flight.launch(
+                                            ShelfFlightRequest(book.cover, bounds) {
+                                                flying = false
+                                                onOpen(book)
+                                            },
                                         )
-                                        // Reset before navigating: the composition may be kept
-                                        // alive by the back stack, and a stale lift would leave
-                                        // the book scaled up when the user comes back.
-                                        openingSlot = null
-                                        opening.snapTo(0f)
-                                        onOpen(book)
+                                    }
+                                    // No overlay (preview, or a cover that never loaded): fall back
+                                    // to the short lift so the tap still reads as taking the book.
+                                    openingSlot == null -> {
+                                        openingSlot = slot
+                                        scope.launch {
+                                            opening.animateTo(
+                                                targetValue = 1f,
+                                                animationSpec = tween(
+                                                    durationMillis = 160,
+                                                    easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f),
+                                                ),
+                                            )
+                                            // Reset before navigating: the composition may be kept
+                                            // alive by the back stack, and a stale lift would leave
+                                            // the book scaled up when the user comes back.
+                                            openingSlot = null
+                                            opening.snapTo(0f)
+                                            onOpen(book)
+                                        }
                                     }
                                 }
                             } else {
@@ -462,7 +484,7 @@ private fun ShelfScene(
     body: Float,
     openingSlot: Int?,
     opening: () -> Float,
-    onTapSlot: (Int) -> Unit,
+    onTapSlot: (Int, Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val count = items.size
@@ -511,7 +533,7 @@ private fun ShelfScene(
                 body = body,
                 isOpening = slot == openingSlot,
                 opening = opening,
-                onTap = { onTapSlot(slot) },
+                onTap = { bounds -> onTapSlot(slot, bounds) },
             )
         }
     }
@@ -532,8 +554,9 @@ private fun ShelfVolume(
     body: Float,
     isOpening: Boolean,
     opening: () -> Float,
-    onTap: () -> Unit,
+    onTap: (Rect) -> Unit,
 ) {
+    var bounds by remember { mutableStateOf(Rect.Zero) }
     val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val surface = if (dark) Color(0xFF2D2D2D) else Color(0xFFF2F0E9)
     val milk = if (dark) Color(0xFF242424) else Color(0xFFFEFDF8)
@@ -605,7 +628,10 @@ private fun ShelfVolume(
                 .size(cover.dp, body.dp)
                 .projectFace(ShelfDepthX, ShelfDepthY, 0f, 0f)
                 .background(milk)
-                .glassClickable(shape = RoundedCornerShape(0.dp), onClick = onTap),
+                // Only the cover publishes bounds: the spine shares them so a tap on the spine
+                // flies the same rectangle, instead of a 15 dp strip stretching to the dossier.
+                .onGloballyPositioned { bounds = it.boundsInRoot() }
+                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds) },
         ) {
             Column(
                 Modifier.fillMaxSize().padding(start = 10.dp, end = 10.dp, top = 9.dp, bottom = 8.dp),
@@ -646,7 +672,7 @@ private fun ShelfVolume(
                 .size(spine.dp, body.dp)
                 .projectFace(1f, 0.10f, 0f, 0f)
                 .background(surface)
-                .glassClickable(shape = RoundedCornerShape(0.dp), onClick = onTap),
+                .glassClickable(shape = RoundedCornerShape(0.dp)) { onTap(bounds) },
         ) {
             Column(
                 Modifier.fillMaxSize().padding(horizontal = 1.dp, vertical = 9.dp),

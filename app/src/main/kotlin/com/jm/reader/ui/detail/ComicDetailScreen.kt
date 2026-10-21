@@ -81,6 +81,7 @@ import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.LocalStats
 import com.jm.reader.ui.components.ArchiveBookRow
 import com.jm.reader.ui.components.ArchiveCode
+import com.jm.reader.ui.components.ArchiveDetailLayout
 import com.jm.reader.ui.components.ArchivePlate
 import com.jm.reader.ui.components.ArchiveReveal
 import com.jm.reader.ui.components.ArchiveSectionHeader
@@ -101,7 +102,7 @@ private data class DetailUiState(
 )
 
 /** Page gutter. Matches the home register (24dp), not the old 20dp card inset. */
-private val Gutter = 24.dp
+private val Gutter = ArchiveDetailLayout.Gutter
 
 /**
  * Comic detail, in the archive vocabulary.
@@ -489,7 +490,7 @@ private fun DossierBar(title: String, onBack: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .height(52.dp)
+            .height(ArchiveDetailLayout.BarHeight)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -538,10 +539,13 @@ private fun DossierHeader(
     val s = LocalAppStrings.current
     val hairline = MaterialTheme.colorScheme.outlineVariant
     Column(Modifier.fillMaxWidth().padding(horizontal = Gutter)) {
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp)) {
+        Row(Modifier.fillMaxWidth().padding(top = ArchiveDetailLayout.HeaderTop, bottom = 16.dp)) {
             Box(
                 Modifier
-                    .size(width = 112.dp, height = 149.dp)
+                    .size(
+                        width = ArchiveDetailLayout.CoverWidth,
+                        height = ArchiveDetailLayout.CoverHeight,
+                    )
                     .registrationMarks(hairline)
                     .border(0.7.dp, hairline, RoundedCornerShape(2.dp))
                     .padding(3.dp),
@@ -749,7 +753,7 @@ private fun LedgerStrip(detail: ComicDetail, s: AppStrings) {
                 drawLine(hairline, Offset(0f, 0f), Offset(size.width, 0f), stroke)
                 drawLine(hairline, Offset(0f, size.height), Offset(size.width, size.height), stroke)
             }
-            .height(52.dp),
+            .height(ArchiveDetailLayout.BarHeight),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LedgerCell(compact(detail.likes), s.likes, Modifier.weight(1f))

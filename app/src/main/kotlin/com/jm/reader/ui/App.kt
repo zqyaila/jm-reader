@@ -2,6 +2,9 @@ package com.jm.reader.ui
 
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
@@ -21,6 +24,9 @@ import androidx.navigation.NavType
 import com.jm.reader.JMApplication
 import com.jm.reader.ui.strings.AppStrings
 import com.jm.reader.ui.blogs.BlogsScreen
+import com.jm.reader.ui.components.LocalShelfFlight
+import com.jm.reader.ui.components.ShelfFlightController
+import com.jm.reader.ui.components.ShelfFlightOverlay
 import com.jm.reader.ui.category.CategoriesScreen
 import com.jm.reader.ui.daily.DailyScreen
 import com.jm.reader.ui.detail.ComicDetailScreen
@@ -69,7 +75,11 @@ private fun AppContent(
     strings: AppStrings,
     theme: AppTheme,
 ) {
+    // Owned at the root: a cover flight has to be drawn above the navigation host, and a shelf
+    // inside a LazyColumn cannot paint outside its own row.
+    val shelfFlight = remember { ShelfFlightController() }
     CompositionLocalProvider(
+        LocalShelfFlight provides shelfFlight,
         LocalRepository provides app.repository,
         LocalSession provides app.session,
         LocalLanguageManager provides app.languageManager,
@@ -88,6 +98,7 @@ private fun AppContent(
         Box(Modifier.fillMaxSize()) {
             AppBackdrop()
             AppNavHost(navController)
+            ShelfFlightOverlay(shelfFlight)
         }
         // Show a copyable crash report if the previous run crashed.
         CrashReportOverlay(app)
@@ -155,9 +166,36 @@ fun AppNavHost(navController: NavHostController) {
         composable(Routes.BLOGS) { BlogsScreen(navController) }
         composable(Routes.FORUM) { ForumScreen(navController) }
 
+        // The dossier is entered through a cover flight, so the page itself fades and settles
+        // instead of sliding: a slide would drag the cover away from the slot the flight just
+        // landed it in. Pushing deeper (reader) and coming back keep the paper-stack slide.
         composable(
             Routes.COMIC_DETAIL,
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            enterTransition = {
+                fadeIn(tween(220)) + scaleIn(
+                    initialScale = 0.985f,
+                    animationSpec = tween(220),
+                )
+            },
+            exitTransition = {
+                slideOutHorizontally(
+                    animationSpec = tween(ArchiveMotion.ExitMs, easing = ArchiveMotion.Exit),
+                    targetOffsetX = { -it / 3 },
+                )
+            },
+            popEnterTransition = {
+                slideInHorizontally(
+                    animationSpec = tween(ArchiveMotion.EnterMs, easing = ArchiveMotion.Enter),
+                    initialOffsetX = { -it / 3 },
+                )
+            },
+            popExitTransition = {
+                fadeOut(tween(200)) + scaleOut(
+                    targetScale = 0.985f,
+                    animationSpec = tween(200),
+                )
+            },
         ) { entry ->
             ComicDetailScreen(navController, entry.arguments?.getString("id").orEmpty())
         }
