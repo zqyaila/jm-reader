@@ -14,11 +14,17 @@ import com.jm.reader.data.model.SeriesItem
 import com.jm.reader.data.repo.AppRepository
 import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.util.ImageDescrambler
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -57,8 +63,11 @@ import java.util.concurrent.atomic.AtomicInteger
  * `01_001.jpg.jm` name and no manifest. Those are still readable as one loose chapter - see
  * [localPages] - because asking people to re-download everything is not a migration.
  *
- * Downloads run on the IO dispatcher, admit one job per album, are cancellable via [deleteAlbum],
- * and only ever record a chapter once every one of its pages landed.
+ * Downloads are a queue per album rather than one job: tapping 下载 on five chapters downloads all
+ * five (two at a time), and because the queue runs on this object's own scope instead of a screen's,
+ * walking off to read something else does not cancel it. A chapter is recorded only once every one
+ * of its pages landed; a failure marks that one chapter so it can be retried, leaving the rest of
+ * the album alone.
  *
  * **Why the files are named `…jpg.jm` and not `…jpg`:** a JPEG sitting in Downloads is picked up
  * by the system media scanner and turns up in every gallery app, which buries the user's real
@@ -85,9 +94,12 @@ class DownloadManager(
         val total: Int,
         val phase: String, // "downloading" | "done" | "failed"
         val error: String? = null,
-        /** Chapter the counter currently belongs to, when the job is a single chapter. */
-        val chapterId: String? = null,
+        /** Chapters waiting behind the ones in flight. */
+        val queued: Int = 0,
     )
+
+    /** What one chapter is doing, for the row that shows it. */
+    enum class ChapterState { QUEUED, DOWNLOADING, FAILED }
 
     private val prefs = context.applicationContext.getSharedPreferences("jm_downloads", Context.MODE_PRIVATE)
     private val http = OkHttpClient.Builder()
@@ -107,7 +119,30 @@ class DownloadManager(
 
     private val manifests = ConcurrentHashMap<String, AlbumManifest>()
 
-    private val downloadMutex = Mutex()
+    /**
+     * Work that outlives the screen that started it.
+     *
+     * Downloads used to be launched from the detail page's own `rememberCoroutineScope`, so
+     * leaving a work - exactly what "download it and go read something else" means - cancelled
+     * the job mid-chapter.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** albumId -> its queue. Guarded by `synchronized(queues)`. */
+    private val queues = HashMap<String, AlbumQueue>()
+
+    private val _chapterStates = MutableStateFlow<Map<String, Map<String, ChapterState>>>(emptyMap())
+    val chapterStates: StateFlow<Map<String, Map<String, ChapterState>>> = _chapterStates.asStateFlow()
+
+    /**
+     * Page slots for the whole app, not per album.
+     *
+     * Each slot holds a decoded bitmap, so this is a memory ceiling: two albums downloading at
+     * once (one from the detail page, one from the library) must not double it.
+     */
+    private val pageSlots = Semaphore(MAX_PAGE_CONCURRENCY)
+
+    private val manifestMutex = Mutex()
     private val cancelFlags = ConcurrentHashMap<String, Boolean>()
 
     /** "Download/JMReader/<albumId>/" - MediaStore stores RELATIVE_PATH with a trailing slash. */
@@ -122,8 +157,6 @@ class DownloadManager(
     fun isDownloaded(albumId: String): Boolean = _albums.value.any { it.albumId == albumId }
 
     fun getAlbum(albumId: String): DownloadedAlbum? = _albums.value.firstOrNull { it.albumId == albumId }
-
-    fun isIdle(albumId: String): Boolean = _downloading.value[albumId]?.phase != "downloading"
 
     // -----------------------------------------------------------------------
     // Manifests
@@ -181,13 +214,80 @@ class DownloadManager(
     // Download jobs
     // -----------------------------------------------------------------------
 
-    /** Downloads every chapter of an album. */
-    suspend fun downloadAlbum(albumId: String): Boolean = withContext(Dispatchers.IO) {
+    fun chapterState(albumId: String, chapterId: String): ChapterState? =
+        _chapterStates.value[albumId]?.get(chapterId)
+
+    private fun setState(albumId: String, chapterId: String, state: ChapterState) {
+        _chapterStates.update { outer ->
+            outer + (albumId to (outer[albumId].orEmpty() + (chapterId to state)))
+        }
+    }
+
+    private fun clearState(albumId: String, chapterId: String) {
+        _chapterStates.update { outer ->
+            val inner = outer[albumId]?.minus(chapterId) ?: return@update outer
+            if (inner.isEmpty()) outer - albumId else outer + (albumId to inner)
+        }
+    }
+
+    /**
+     * Queues one chapter.
+     *
+     * Returns false when there is nothing to do - the chapter is already on disk, or already
+     * waiting in the queue - which is also what makes a double tap harmless.
+     */
+    fun enqueueChapter(albumId: String, albumName: String, chapter: SeriesItem): Boolean {
+        if (albumId.isBlank() || chapter.id.isBlank()) return false
+        if (downloadedPages(albumId, chapter.id) > 0) return false
+        val previous = chapterState(albumId, chapter.id)
+        if (previous == ChapterState.QUEUED || previous == ChapterState.DOWNLOADING) return false
+
+        val queue = queueFor(albumId, albumName)
+        synchronized(queue) {
+            // A retry of a chapter that failed takes it off the failed tally, otherwise the album
+            // would keep reading as "failed" after a successful second attempt.
+            if (previous == ChapterState.FAILED) queue.failed = (queue.failed - 1).coerceAtLeast(0)
+            queue.queued++
+        }
+        setState(albumId, chapter.id, ChapterState.QUEUED)
+        publish(albumId, queue)
+        queue.channel.trySend(chapter)
+        return true
+    }
+
+    /**
+     * Queues every chapter of an album that is not on disk yet.
+     *
+     * Deliberately not suspending and not tied to the caller: the album payload is fetched on this
+     * object's scope, so leaving the page a second after tapping 下载 still downloads the work -
+     * which is the whole point of a background download.
+     */
+    fun downloadAlbum(albumId: String) {
+        // Shown immediately; the queue takes over once it knows how many pages are coming. Skipped
+        // when a queue is already running, so re-tapping does not blank its counters.
+        if (_downloading.value[albumId]?.phase != "downloading") {
+            _downloading.update { it + (albumId to Progress(albumId, 0, 0, "downloading")) }
+        }
+        scope.launch {
+            try {
+                enqueueAlbumChapters(albumId)
+            } catch (c: CancellationException) {
+                throw c
+            } catch (e: Exception) {
+                // Without this the cell would spin forever on a payload the network threw on.
+                _downloading.update {
+                    it + (albumId to Progress(albumId, 0, 0, "failed", e.message))
+                }
+            }
+        }
+    }
+
+    private suspend fun enqueueAlbumChapters(albumId: String) {
         val detail = when (val r = repository.getAlbum(albumId)) {
             is RepoResult.Ok -> r.data
             is RepoResult.Err -> {
-                _downloading.update { it + (albumId to Progress(albumId, 0, 1, "failed", r.message)) }
-                return@withContext false
+                _downloading.update { it + (albumId to Progress(albumId, 0, 0, "failed", r.message)) }
+                return
             }
         }
         val chapters = if (detail.series.isNotEmpty()) {
@@ -197,152 +297,202 @@ class DownloadManager(
             // the reader uses, so the offline copy lines up with the online one.
             listOf(SeriesItem(id = albumId, sort = 1, name = detail.name))
         }
-        runJob(albumId, detail.name.ifBlank { "JM$albumId" }, chapters)
+        val name = detail.name.ifBlank { "JM$albumId" }
+        var queuedAny = false
+        chapters.forEach { if (enqueueChapter(albumId, name, it)) queuedAny = true }
+        // Everything was already downloaded (or already queued): nothing will publish again.
+        if (!queuedAny) publish(albumId, queueFor(albumId, name))
     }
 
-    /** Downloads one chapter of an album. Already-downloaded chapters are skipped. */
-    suspend fun downloadChapter(albumId: String, albumName: String, chapter: SeriesItem): Boolean {
-        if (chapter.id.isBlank()) return false
-        return runJob(albumId, albumName, listOf(chapter))
+    /** The queue of one album, plus the counters its progress line is built from. */
+    private class AlbumQueue {
+        val channel = Channel<SeriesItem>(Channel.UNLIMITED)
+        var worker: Job? = null
+        var albumName: String = ""
+        var total = 0
+        var done = 0
+        var active = 0
+        var queued = 0
+        var failed = 0
     }
 
-    private suspend fun runJob(
-        albumId: String,
-        albumName: String,
-        chapters: List<SeriesItem>,
-    ): Boolean = withContext(Dispatchers.IO) {
-        val admitted = downloadMutex.withLock {
-            if (_downloading.value[albumId]?.phase == "downloading") {
-                false
-            } else {
-                cancelFlags.remove(albumId)
-                _downloading.update { it + (albumId to Progress(albumId, 0, 0, "downloading")) }
-                true
-            }
+    private fun queueFor(albumId: String, albumName: String): AlbumQueue = synchronized(queues) {
+        val queue = queues.getOrPut(albumId) {
+            AlbumQueue().also { q -> q.worker = scope.launch { drain(albumId, q) } }
         }
-        if (!admitted) return@withContext false
-
-        var ok = true
-        try {
-            val todo = chapters.filterNot { manifest(albumId)?.chapter(it.id) != null }
-            if (todo.isEmpty()) {
-                syncIndex(albumId, albumName)
-                _downloading.update { it + (albumId to Progress(albumId, 0, 0, "done")) }
-                return@withContext true
-            }
-
-            // Per-chapter read payloads, fetched concurrently - the chapter list of a 40-chapter
-            // album would otherwise cost 40 sequential round trips before the first page is
-            // requested. A chapter whose payload fails is skipped instead of failing the album.
-            val fetched: List<Pair<SeriesItem, ReadData>?> = coroutineScope {
-                // Bounded: a 400-chapter serial would otherwise open 400 sockets at once and get
-                // rate-limited, which is exactly the download that used to fail.
-                val gate = Semaphore(READ_PARALLELISM)
-                todo.map { chapter ->
-                    async {
-                        gate.withPermit {
-                            when (val r = repository.comicRead(chapter.id)) {
-                                is RepoResult.Ok -> chapter to r.data
-                                is RepoResult.Err -> null
-                            }
-                        }
-                    }
-                }.awaitAll()
-            }
-            if (fetched.any { it == null }) ok = false
-            val payloads = fetched.filterNotNull()
-            val totalPages = payloads.sumOf { it.second.images.size }
-            if (totalPages == 0) throw IllegalStateException("no pages")
-
-            val completed = AtomicInteger(0)
-            _downloading.update { it + (albumId to Progress(albumId, 0, totalPages, "downloading")) }
-
-            for ((chapter, data) in payloads) {
-                if (cancelFlags[albumId] == true) {
-                    ok = false
-                    break
-                }
-                val chapterOk = downloadOneChapter(albumId, chapter, data, completed, totalPages)
-                if (chapterOk) {
-                    // A delete that started while this chapter was in flight owns the folder now;
-                    // recording the chapter would resurrect an album the reader just removed.
-                    if (cancelFlags[albumId] == true) {
-                        ok = false
-                        break
-                    }
-                    updateManifest(albumId, albumName, chapter, data.images.size)
-                    syncIndex(albumId, albumName)
-                } else {
-                    ok = false
-                    if (cancelFlags[albumId] == true) break
-                }
-            }
-
-            cancelFlags.remove(albumId)
-            if (ok) {
-                _downloading.update { it + (albumId to Progress(albumId, totalPages, totalPages, "done")) }
-            } else {
-                _downloading.update {
-                    it + (albumId to Progress(albumId, 0, 1, "failed", "部分頁面下載失敗"))
-                }
-            }
-        } catch (e: Exception) {
-            // Whatever already landed stays: a completed chapter is a finished download, and the
-            // manifest is the only thing that says so. Only the interrupted chapter is removed.
-            cancelFlags.remove(albumId)
-            _downloading.update { it + (albumId to Progress(albumId, 0, 1, "failed", e.message)) }
-            ok = false
-        }
-        ok
+        if (albumName.isNotBlank()) queue.albumName = albumName
+        queue
     }
 
-    /** Downloads every page of one chapter; false if any page failed (its folder is then removed). */
-    private suspend fun downloadOneChapter(
-        albumId: String,
-        chapter: SeriesItem,
-        data: ReadData,
-        completed: AtomicInteger,
-        totalPages: Int,
-    ): Boolean = coroutineScope {
-        val images = data.images
-        if (images.isEmpty()) return@coroutineScope false
-        val aid = data.id.toLongOrNull() ?: 0L
-
-        // One task per page. The file name carries the page number, so the order tasks happen to
-        // finish in has no effect on what lands on disk.
-        val tasks = images.mapIndexed { index, page: ReadPage ->
-            PageTask(
-                name = chapterPageName(index + 1),
-                url = page.image,
-                aid = aid,
-                scrambleId = data.scrambleId,
+    private fun publish(albumId: String, queue: AlbumQueue) {
+        // A delete removes the queue; a late page must not resurrect its progress line.
+        if (synchronized(queues) { queues[albumId] } !== queue) return
+        val progress = synchronized(queue) {
+            val phase = albumPhase(queue.active, queue.queued, queue.failed)
+            Progress(
+                albumId = albumId,
+                current = queue.done.coerceAtMost(queue.total),
+                total = queue.total,
+                phase = phase,
+                queued = queue.queued,
             )
         }
+        _downloading.update { it + (albumId to progress) }
+    }
+
+    /**
+     * The album's worker.
+     *
+     * [CHAPTER_PARALLELISM] chapters run at once, all of them sharing [MAX_PAGE_CONCURRENCY] page
+     * slots. Two sockets per chapter would double throughput on paper and double the bitmaps held
+     * in memory in practice; a shared gate keeps the peak where it was while still letting a
+     * second chapter make progress while the first is decoding.
+     */
+    private suspend fun drain(albumId: String, queue: AlbumQueue) = coroutineScope {
+        val chapters = Semaphore(CHAPTER_PARALLELISM)
+        for (chapter in queue.channel) {
+            chapters.acquire()
+            launch {
+                try {
+                    runChapter(albumId, queue, chapter, pageSlots)
+                } finally {
+                    chapters.release()
+                }
+            }
+        }
+    }
+
+    private suspend fun runChapter(
+        albumId: String,
+        queue: AlbumQueue,
+        chapter: SeriesItem,
+        gate: Semaphore,
+    ) {
+        val alreadyThere = manifest(albumId)?.chapter(chapter.id) != null
+        synchronized(queue) {
+            queue.queued = (queue.queued - 1).coerceAtLeast(0)
+            queue.active++
+        }
+        if (alreadyThere) {
+            // Queued twice before the first copy landed: nothing to fetch, and the manifest is
+            // already right.
+            synchronized(queue) { queue.active = (queue.active - 1).coerceAtLeast(0) }
+            publish(albumId, queue)
+            return
+        }
+
+        setState(albumId, chapter.id, ChapterState.DOWNLOADING)
+        publish(albumId, queue)
+
+        var ok = false
+        try {
+            ok = downloadChapterPages(albumId, queue, chapter, gate)
+        } catch (c: CancellationException) {
+            throw c
+        } catch (_: Exception) {
+            ok = false
+        } finally {
+            // Runs on cancellation too: a delete waits for `active` to fall to zero before it
+            // removes the folder, and a cancelled chapter must not keep that wait alive.
+            synchronized(queue) {
+                queue.active = (queue.active - 1).coerceAtLeast(0)
+                if (!ok) queue.failed++
+            }
+            // A cancelled chapter belongs to a delete that already cleared the album's states;
+            // re-adding it would leave a retry icon on a work whose folder is gone.
+            if (cancelFlags[albumId] != true) {
+                if (ok) clearState(albumId, chapter.id)
+                else setState(albumId, chapter.id, ChapterState.FAILED)
+            }
+            publish(albumId, queue)
+        }
+    }
+
+    /** Every page of one chapter; false means nothing usable landed and the folder was removed. */
+    private suspend fun downloadChapterPages(
+        albumId: String,
+        queue: AlbumQueue,
+        chapter: SeriesItem,
+        gate: Semaphore,
+    ): Boolean {
+        val data = fetchRead(chapter.id) ?: return false
+        val images = data.images
+        if (images.isEmpty()) return false
+        val aid = data.id.toLongOrNull() ?: 0L
+
+        synchronized(queue) { queue.total += images.size }
+        publish(albumId, queue)
+        // Pages that actually landed for *this* attempt: a chapter that fails is deleted and
+        // retried, and its pages must come back off the album counters or the retry counts twice.
+        val landed = AtomicInteger(0)
 
         val outcomes: List<Boolean> = coroutineScope {
-            val gate = Semaphore(PAGE_PARALLELISM)
-            tasks.map { task ->
+            images.mapIndexed { index, page: ReadPage ->
                 async {
                     gate.withPermit {
+                        if (cancelFlags[albumId] == true) return@withPermit false
+                        val task = PageTask(
+                            name = chapterPageName(index + 1),
+                            url = page.image,
+                            aid = aid,
+                            scrambleId = data.scrambleId,
+                        )
                         var saved = false
                         var attempt = 0
-                        while (!saved && attempt < PAGE_ATTEMPTS && cancelFlags[albumId] != true) {
+                        // Retried with a growing pause: an immediate second try after a 429 or a
+                        // dropped socket tends to be refused for the same reason as the first.
+                        while (!saved && attempt < PAGE_ATTEMPTS) {
+                            if (attempt > 0) delay(PAGE_RETRY_MS * attempt)
                             attempt++
                             saved = savePage(albumId, chapter.id, task)
                         }
-                        val n = completed.incrementAndGet()
-                        _downloading.update {
-                            it + (albumId to Progress(albumId, n, totalPages, "downloading", chapterId = chapter.id))
+                        synchronized(queue) {
+                            if (saved) {
+                                queue.done++
+                                landed.incrementAndGet()
+                            }
                         }
+                        publish(albumId, queue)
                         saved
                     }
                 }
             }.awaitAll()
         }
 
-        val failed = outcomes.any { !it } || cancelFlags[albumId] == true
-        if (failed) deleteChapterFolder(albumId, chapter.id)
-        !failed
+        if (outcomes.any { !it } || cancelFlags[albumId] == true) {
+            synchronized(queue) {
+                queue.done = (queue.done - landed.get()).coerceAtLeast(0)
+                queue.total = (queue.total - images.size).coerceAtLeast(0)
+            }
+            deleteChapterFolder(albumId, chapter.id)
+            return false
+        }
+
+        // Two chapters can finish at the same instant; the manifest is a whole-file rewrite, so
+        // the updates have to be serialised or one of them is lost.
+        manifestMutex.withLock {
+            if (cancelFlags[albumId] == true) {
+                deleteChapterFolder(albumId, chapter.id)
+                return false
+            }
+            updateManifest(albumId, queue.albumName, chapter, images.size)
+            syncIndex(albumId, queue.albumName)
+        }
+        return true
+    }
+
+    /** Chapter payload, retried: one timeout used to be enough to fail a whole chapter. */
+    private suspend fun fetchRead(chapterId: String): ReadData? {
+        var attempt = 0
+        while (attempt < READ_ATTEMPTS) {
+            if (attempt > 0) delay(READ_RETRY_MS * attempt)
+            attempt++
+            when (val r = repository.comicRead(chapterId)) {
+                is RepoResult.Ok -> return r.data
+                is RepoResult.Err -> Unit
+            }
+        }
+        return null
     }
 
     /** Downloads one page, de-scrambles it (if the album requires it) and writes a JPEG. */
@@ -506,12 +656,19 @@ class DownloadManager(
 
     suspend fun deleteAlbum(albumId: String) {
         cancelFlags[albumId] = true
+        // Close the queue first: anything still waiting behind the running chapters must never
+        // start, or it would write pages into a folder that is being deleted.
+        val queue = synchronized(queues) { queues.remove(albumId) }
+        queue?.worker?.cancel()
+        queue?.channel?.close()
+        _chapterStates.update { it - albumId }
+
         withContext(Dispatchers.IO) {
-            // Let an in-flight job notice the flag and stop writing first: deleting the folder
-            // underneath it would leave pages the manifest knows nothing about. Bounded, because
+            // Let in-flight pages notice the flag and stop writing first: deleting the folder
+            // underneath them would leave pages the manifest knows nothing about. Bounded, because
             // a stuck request must not make the delete button look dead.
             var waited = 0
-            while (_downloading.value[albumId]?.phase == "downloading" && waited < 50) {
+            while (queue != null && synchronized(queue) { queue.active > 0 } && waited < 50) {
                 delay(100)
                 waited++
             }
@@ -519,6 +676,8 @@ class DownloadManager(
             forgetManifest(albumId)
             removeIndex(albumId)
         }
+        cancelFlags.remove(albumId)
+        _downloading.update { it - albumId }
     }
 
     private fun deleteAlbumFolder(albumId: String) {
@@ -737,16 +896,42 @@ class DownloadManager(
          * bitmap (up to ~26 MB for a 2560x2560 page), and descrambling briefly holds two, so a
          * higher number buys little throughput while risking an OOM on a modest device.
          */
-        const val PAGE_PARALLELISM = 3
+        /**
+         * Page slots shared by every chapter of an album. Each slot holds one decoded bitmap (up
+         * to ~26 MB at 2560x2560), so this is a memory ceiling more than a network setting - and
+         * it now overlaps with the reader, which holds bitmaps of its own: the queue keeps
+         * downloading while you read something else.
+         */
+        const val MAX_PAGE_CONCURRENCY = 2
 
-        /** Chapter payloads fetched at once; the payload is small, the socket count is the cost. */
-        const val READ_PARALLELISM = 4
+        /** Chapters in flight at once; they share [MAX_PAGE_CONCURRENCY] page slots. */
+        const val CHAPTER_PARALLELISM = 2
 
-        /** Attempts per page (1 try + 1 retry) before the chapter is declared failed. */
-        const val PAGE_ATTEMPTS = 2
+        /** Attempts per page before its chapter is declared failed. */
+        const val PAGE_ATTEMPTS = 3
+
+        /** Backoff step between page attempts; grows linearly with the attempt number. */
+        const val PAGE_RETRY_MS = 600L
+
+        /** Attempts at the chapter payload before giving up on that chapter. */
+        const val READ_ATTEMPTS = 3
+
+        const val READ_RETRY_MS = 700L
 
         const val KEY_LEGACY_MIGRATED = "legacyNamingMigrated"
     }
+}
+
+/**
+ * What an album's progress line should say.
+ *
+ * Anything still in flight or waiting wins: a single failed chapter must not paint the whole album
+ * red while three others are still downloading. "failed" only once the queue has drained.
+ */
+internal fun albumPhase(active: Int, queued: Int, failed: Int): String = when {
+    active > 0 || queued > 0 -> "downloading"
+    failed > 0 -> "failed"
+    else -> "done"
 }
 
 /** Extension of the JPEG stored on disk. */

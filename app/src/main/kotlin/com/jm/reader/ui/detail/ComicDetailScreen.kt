@@ -41,6 +41,8 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -78,6 +80,7 @@ import com.jm.reader.data.history.ChapterProgress
 import com.jm.reader.data.history.ChapterReadState
 import com.jm.reader.data.history.chapterReadState
 import com.jm.reader.data.download.DownloadManager
+import com.jm.reader.data.download.DownloadManager.ChapterState
 import com.jm.reader.data.model.ComicDetail
 import com.jm.reader.data.model.SeriesItem
 import com.jm.reader.data.repo.AppRepository
@@ -170,27 +173,25 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
     val downloadingState by downloadManager.downloading.collectAsState()
     val downloadedAlbums by downloadManager.albums.collectAsState()
     val chapterPages by downloadManager.chapterPages.collectAsState()
+    val chapterDownloads by downloadManager.chapterStates.collectAsState()
     val readingProgress by progressStore.state.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) scope.launch {
-            val ok = downloadManager.downloadAlbum(id)
-            snackbar.showSnackbar(if (ok) s.downloadComplete else s.downloadFailed)
-        }
+        if (granted) downloadManager.downloadAlbum(id)
     }
 
+    // Queueing, not doing: the download itself runs on the manager's own scope, so it survives
+    // walking into another work. Progress and failures are read back from `downloading` /
+    // `chapterStates` instead of being reported once from here.
     fun startDownload() {
         if (Build.VERSION.SDK_INT <= 28 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
         ) {
             permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         } else {
-            scope.launch {
-                val ok = downloadManager.downloadAlbum(id)
-                snackbar.showSnackbar(if (ok) s.downloadComplete else s.downloadFailed)
-            }
+            downloadManager.downloadAlbum(id)
         }
     }
 
@@ -313,6 +314,9 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                     } else if (offlineReady) {
                                         navController.navigate(Routes.offlineReader(detail.id))
                                     } else {
+                                        // Also the retry path: a failed job leaves `phase` at
+                                        // "failed", and tapping the cell queues the rest again -
+                                        // finished chapters are skipped by the manifest.
                                         startDownload()
                                     }
                                 },
@@ -451,33 +455,36 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                             }
                         } else {
                             items(chapters, key = { it.id }) { chapter ->
+                                val pagesOnDisk = chapterPages[detail.id]?.get(chapter.id) ?: 0
                                 ChapterRow(
                                     chapter = chapter,
                                     currentReadId = readId,
                                     saved = albumRead[chapter.id],
-                                    downloadedPages = chapterPages[detail.id]?.get(chapter.id) ?: 0,
-                                    downloading = downloadingState[detail.id]
-                                        ?.takeIf { it.phase == "downloading" && it.chapterId == chapter.id },
+                                    downloadedPages = pagesOnDisk,
+                                    downloadState = chapterDownloads[detail.id]?.get(chapter.id),
                                     s = s,
                                     onClick = {
-                                        if (!detail.isPaid) {
-                                            if (session.isLoggedIn) scope.launch { repo.addWatch(chapter.id) }
-                                            navController.navigate(Routes.reader(detail.id, chapter.id))
-                                        } else {
-                                            scope.launch { snackbar.showSnackbar(s.paidContentNotice) }
+                                        when {
+                                            detail.isPaid ->
+                                                scope.launch { snackbar.showSnackbar(s.paidContentNotice) }
+                                            // Already on the device: read it from the device. Streaming
+                                            // a chapter that is sitting in Download/ is wasted data,
+                                            // and offline it would fail outright.
+                                            pagesOnDisk > 0 ->
+                                                navController.navigate(Routes.offlineReader(detail.id, chapter.id))
+                                            else -> {
+                                                if (session.isLoggedIn) scope.launch { repo.addWatch(chapter.id) }
+                                                navController.navigate(Routes.reader(detail.id, chapter.id))
+                                            }
                                         }
                                     },
                                     onDownload = {
                                         if (detail.isPaid) {
                                             scope.launch { snackbar.showSnackbar(s.paidContentNotice) }
                                         } else {
-                                            scope.launch {
-                                                if (!downloadManager.isIdle(detail.id)) {
-                                                    snackbar.showSnackbar(s.chapterUi.downloadBusy)
-                                                } else if (!downloadManager.downloadChapter(detail.id, detail.name, chapter)) {
-                                                    snackbar.showSnackbar(s.chapterUi.chapterDownloadFailed)
-                                                }
-                                            }
+                                            // Queues behind whatever is already running, so tapping
+                                            // five arrows downloads all five.
+                                            downloadManager.enqueueChapter(detail.id, detail.name, chapter)
                                         }
                                     },
                                     onOpenOffline = {
@@ -886,19 +893,31 @@ private fun ActionStrip(
 
         ActionCell(
             label = when {
-                downloadPhase == "downloading" -> "$downloadNow/$downloadTotal"
+                // Before the album payload lands the queue knows no total; a spinner explains
+                // "0/0" badly, so say what it is.
+                downloadPhase == "downloading" && downloadTotal > 0 -> "$downloadNow/$downloadTotal"
+                downloadPhase == "downloading" -> s.downloading
                 allDownloaded -> s.downloaded
+                // How much of a long serial is on the device beats "重试" - the red arrow already
+                // says something failed.
                 downloadedChapters > 0 -> "$downloadedChapters/$totalChapters"
+                downloadPhase == "failed" -> s.chapterUi.retry
                 downloaded -> s.downloaded
                 else -> s.download
             },
             onClick = onDownload,
             modifier = Modifier.weight(0.9f),
         ) {
-            if (downloadPhase == "downloading") {
-                CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.5.dp, color = ink)
-            } else {
-                Icon(
+            when {
+                downloadPhase == "downloading" ->
+                    CircularProgressIndicator(Modifier.size(15.dp), strokeWidth = 1.5.dp, color = ink)
+                downloadPhase == "failed" -> Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = s.chapterUi.retry,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
+                )
+                else -> Icon(
                     if (downloaded) Icons.Filled.CheckCircle else Icons.Filled.Download,
                     contentDescription = s.download,
                     tint = if (downloaded) MaterialTheme.colorScheme.primary else ink,
@@ -1109,7 +1128,7 @@ private fun ChapterRow(
     currentReadId: String,
     saved: ChapterProgress?,
     downloadedPages: Int,
-    downloading: DownloadManager.Progress?,
+    downloadState: ChapterState?,
     s: AppStrings,
     onClick: () -> Unit,
     onDownload: () -> Unit,
@@ -1120,15 +1139,23 @@ private fun ChapterRow(
     val total = if (chapter.totalPage > 0) chapter.totalPage else saved?.total ?: 0
     val state = chapterReadState(saved, chapter.totalPage)
     val isOffline = downloadedPages > 0
+    val busy = downloadState == ChapterState.QUEUED || downloadState == ChapterState.DOWNLOADING
 
-    // One trailing slot, three meanings: how far in you are, how far a download got, or the page
-    // count. Stacking all three was what made the row unreadable at 360 dp.
+    // One trailing slot, and only one thing worth saying at a time: where the download stands if
+    // it is in the queue, otherwise how far into the chapter you are.
     val trailing = when {
-        downloading != null -> "${downloading.current}/${downloading.total}"
+        downloadState == ChapterState.FAILED -> s.chapterUi.failed
+        downloadState == ChapterState.QUEUED -> s.chapterUi.queued
+        downloadState == ChapterState.DOWNLOADING -> s.downloading
         state == ChapterReadState.READING -> "${saved?.page ?: 0}/$total"
         state == ChapterReadState.READ -> s.chapterUi.read
         total > 0 -> "${total}P"
         else -> null
+    }
+    val trailingColor = when {
+        downloadState == ChapterState.FAILED -> MaterialTheme.colorScheme.error
+        busy || state == ChapterReadState.READING -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 
     Row(
@@ -1171,11 +1198,7 @@ private fun ChapterRow(
                 Text(
                     trailing,
                     style = CodeTextStyle.copy(fontSize = 8.sp),
-                    color = if (state == ChapterReadState.READING || downloading != null) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = trailingColor,
                     maxLines = 1,
                     modifier = Modifier.padding(start = 8.dp),
                 )
@@ -1187,15 +1210,33 @@ private fun ChapterRow(
                 .size(38.dp)
                 .glassClickable(
                     shape = RoundedCornerShape(2.dp),
-                    onClick = if (isOffline) onOpenOffline else onDownload,
+                    // A queued chapter has nothing to say when tapped; a failed one is the
+                    // retry button, and a finished one opens its copy on disk.
+                    onClick = when {
+                        isOffline -> onOpenOffline
+                        busy -> ({})
+                        else -> onDownload
+                    },
                 ),
             contentAlignment = Alignment.Center,
         ) {
             when {
-                downloading != null -> CircularProgressIndicator(
+                downloadState == ChapterState.DOWNLOADING -> CircularProgressIndicator(
                     Modifier.size(14.dp),
                     strokeWidth = 1.4.dp,
                     color = MaterialTheme.colorScheme.primary,
+                )
+                downloadState == ChapterState.QUEUED -> Icon(
+                    Icons.Filled.Schedule,
+                    contentDescription = s.chapterUi.queued,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp),
+                )
+                downloadState == ChapterState.FAILED -> Icon(
+                    Icons.Filled.Refresh,
+                    contentDescription = s.chapterUi.retry,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
                 )
                 isOffline -> Icon(
                     Icons.Filled.CheckCircle,

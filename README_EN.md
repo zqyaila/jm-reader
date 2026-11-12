@@ -41,7 +41,12 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   playable in the built-in **offline reader** (no network needed), which lists chapters,
   steps previous/next and remembers the page exactly like the online reader. One finished
   chapter is enough to open the album offline; an interrupted chapter is discarded, finished
-  ones are kept
+  ones are kept. Tapping several arrows queues them all (two chapters run at a time), and the
+  queue lives on the app's own scope — leaving the page to read something else keeps it going,
+  with per-chapter state (queued / downloading / failed) shown on return. A failed chapter is
+  retried automatically per page (3 attempts, growing pauses) and, if it still fails, offers a
+  retry button; chapters already on disk are never fetched twice. Tapping a chapter that is on
+  disk opens it straight from storage instead of streaming it again
 - 🕘 **Browsing history** — every album you open is remembered on the device (no account
   needed, works offline), with per-item delete and clear-all
 - 🛡️ **Crash report on next launch** — if the app crashes, the stack trace is saved and shown

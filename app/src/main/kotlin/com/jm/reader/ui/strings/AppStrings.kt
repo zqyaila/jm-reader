@@ -1142,8 +1142,11 @@ interface ChapterStrings {
     val reading: String
     val read: String
     val downloadChapter: String
-    val downloadBusy: String
-    val chapterDownloadFailed: String
+    /** A chapter sitting in the download queue, not started yet. */
+    val queued: String
+    /** A chapter whose download gave up; the row offers to try again. */
+    val failed: String
+    val retry: String
     val offlineChapters: String
     val legacyFiles: String
 }
@@ -1154,8 +1157,9 @@ private object ChapterStringsZh : ChapterStrings {
     override val reading = "阅读中"
     override val read = "已读"
     override val downloadChapter = "下载本话"
-    override val downloadBusy = "正在下载，请稍候"
-    override val chapterDownloadFailed = "本话下载失败"
+    override val queued = "排队中"
+    override val failed = "失败"
+    override val retry = "重试"
     override val offlineChapters = "离线章节"
     override val legacyFiles = "旧版本文件"
 }
@@ -1166,8 +1170,9 @@ private object ChapterStringsTw : ChapterStrings {
     override val reading = "閱讀中"
     override val read = "已讀"
     override val downloadChapter = "下載本話"
-    override val downloadBusy = "正在下載，請稍候"
-    override val chapterDownloadFailed = "本話下載失敗"
+    override val queued = "排隊中"
+    override val failed = "失敗"
+    override val retry = "重試"
     override val offlineChapters = "離線章節"
     override val legacyFiles = "舊版本檔案"
 }
@@ -1178,8 +1183,9 @@ private object ChapterStringsEn : ChapterStrings {
     override val reading = "Reading"
     override val read = "Read"
     override val downloadChapter = "Download chapter"
-    override val downloadBusy = "Downloading, please wait"
-    override val chapterDownloadFailed = "Chapter download failed"
+    override val queued = "Queued"
+    override val failed = "Failed"
+    override val retry = "Retry"
     override val offlineChapters = "Offline chapters"
     override val legacyFiles = "Older files"
 }
