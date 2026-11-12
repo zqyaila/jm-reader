@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.jm.reader.data.download.DownloadManager
 import com.jm.reader.data.history.HistoryManager
+import com.jm.reader.data.history.ReadingProgressStore
 import com.jm.reader.data.history.SearchHistoryManager
 import com.jm.reader.data.net.ApiClient
 import com.jm.reader.data.net.HostManager
@@ -33,6 +34,8 @@ class JMApplication : Application() {
     lateinit var downloadManager: DownloadManager
         private set
     lateinit var historyManager: HistoryManager
+    lateinit var progressStore: ReadingProgressStore
+        private set
     lateinit var searchHistoryManager: SearchHistoryManager
         private set
     lateinit var statsManager: ReadingStatsManager
@@ -69,6 +72,7 @@ class JMApplication : Application() {
         repository = AppRepository(session, apiClient, hostManager)
         downloadManager = DownloadManager(this, repository)
         historyManager = HistoryManager(this)
+        progressStore = ReadingProgressStore(this)
         searchHistoryManager = SearchHistoryManager(this)
         statsManager = ReadingStatsManager(this)
         updateManager = UpdateManager(this, http)

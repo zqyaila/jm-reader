@@ -86,6 +86,7 @@ private fun AppContent(
         LocalLanguageManager provides app.languageManager,
         LocalDownloadManager provides app.downloadManager,
         LocalHistoryManager provides app.historyManager,
+        LocalReadingProgress provides app.progressStore,
         LocalSearchHistoryManager provides app.searchHistoryManager,
         LocalStats provides app.statsManager,
         LocalUpdateManager provides app.updateManager,
@@ -246,9 +247,16 @@ fun AppNavHost(navController: NavHostController) {
 
         composable(
             Routes.OFFLINE_READER,
-            arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            arguments = listOf(
+                navArgument("id") { type = NavType.StringType },
+                navArgument("chapter") { type = NavType.StringType; defaultValue = "" },
+            ),
         ) { entry ->
-            OfflineReaderScreen(navController, entry.arguments?.getString("id").orEmpty())
+            OfflineReaderScreen(
+                navController,
+                albumId = entry.arguments?.getString("id").orEmpty(),
+                initialChapterId = entry.arguments?.getString("chapter").orEmpty(),
+            )
         }
 
         composable(

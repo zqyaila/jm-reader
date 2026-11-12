@@ -30,6 +30,8 @@ class HistoryManager(context: Context) {
         val viewedAt: Long,
         /** Last chapter title opened in the reader, when known. */
         val episodeName: String? = null,
+        /** Last chapter id opened in the reader; what "continue reading" reopens. */
+        val episodeId: String? = null,
         /** 1-based page the reader last showed. */
         val pageIndex: Int = 0,
     ) {
@@ -53,6 +55,7 @@ class HistoryManager(context: Context) {
                 updateAt = if (updateAt > 0) updateAt else existing?.updateAt ?: 0L,
                 viewedAt = System.currentTimeMillis(),
                 episodeName = existing?.episodeName,
+                episodeId = existing?.episodeId,
                 pageIndex = existing?.pageIndex ?: 0,
             )
         }
@@ -62,7 +65,7 @@ class HistoryManager(context: Context) {
      * Records reading progress from the reader. Called often, so it only bumps what changed and
      * never clears the album's other fields.
      */
-    fun recordProgress(albumId: String, episodeName: String?, pageIndex: Int) {
+    fun recordProgress(albumId: String, episodeId: String?, episodeName: String?, pageIndex: Int) {
         if (albumId.isBlank()) return
         upsert(albumId) { existing ->
             val base = existing ?: Entry(
@@ -73,6 +76,7 @@ class HistoryManager(context: Context) {
                 viewedAt = System.currentTimeMillis(),
             )
             base.copy(
+                episodeId = episodeId?.takeIf { it.isNotBlank() } ?: base.episodeId,
                 episodeName = episodeName?.takeIf { it.isNotBlank() } ?: base.episodeName,
                 pageIndex = if (pageIndex > 0) pageIndex else base.pageIndex,
                 viewedAt = System.currentTimeMillis(),
@@ -110,6 +114,7 @@ class HistoryManager(context: Context) {
                     .put("updateAt", e.updateAt)
                     .put("viewedAt", e.viewedAt)
                     .put("episodeName", e.episodeName ?: "")
+                    .put("episodeId", e.episodeId ?: "")
                     .put("pageIndex", e.pageIndex)
             )
         }
@@ -132,6 +137,7 @@ class HistoryManager(context: Context) {
                     updateAt = o.optLong("updateAt"),
                     viewedAt = o.optLong("viewedAt"),
                     episodeName = o.optString("episodeName").takeIf { it.isNotBlank() },
+                    episodeId = o.optString("episodeId").takeIf { it.isNotBlank() },
                     pageIndex = o.optInt("pageIndex", 0),
                 )
             }

@@ -88,20 +88,34 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavHostController
 import com.jm.reader.data.history.BookmarkStore
 import com.jm.reader.data.history.ReadingBookmark
+import com.jm.reader.data.history.chapterReadState
 import com.jm.reader.data.model.ComicDetail
 import com.jm.reader.data.model.ReadData
 import com.jm.reader.data.repo.RepoResult
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalHistoryManager
+import com.jm.reader.ui.LocalReadingProgress
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.LocalStats
+import com.jm.reader.ui.components.ChapterEntry
+import com.jm.reader.ui.components.ChapterPickerDialog
 import com.jm.reader.ui.components.ErrorView
 import com.jm.reader.ui.components.LoadingView
 import com.jm.reader.ui.nav.Routes
 import com.jm.reader.util.ImageSaver
 import com.jm.reader.util.ReaderImageLoader
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+
+/**
+ * How long the reader stays on a page before the position is written.
+ *
+ * Long enough that skimming a chapter is one write instead of thirty, short enough that a phone
+ * killed by the system still reopens where it was.
+ */
+private const val PROGRESS_SAVE_MS = 800L
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -109,6 +123,7 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
     val repo = LocalRepository.current
     val session = LocalSession.current
     val history = LocalHistoryManager.current
+    val progressStore = LocalReadingProgress.current
     val stats = LocalStats.current
     val s = LocalAppStrings.current
     val scope = rememberCoroutineScope()
@@ -133,8 +148,16 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
     var autoScroll by rememberSaveable { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
 
-    /** Page to jump to once the chapter it belongs to has loaded (bookmark navigation). */
-    var pendingPage by remember { mutableStateOf<Int?>(null) }
+    /**
+     * Page to jump to once the chapter it belongs to has loaded.
+     *
+     * Seeded from the saved position so returning to a half-read chapter resumes it; a bookmark
+     * or a chapter change overwrites it. Captured once on entry on purpose - the *next* chapter
+     * must always start at its first page.
+     */
+    var pendingPage by remember {
+        mutableStateOf(progressStore.chapter(albumId, currentReadId)?.page?.takeIf { it > 1 })
+    }
 
     val bookmarks = remember(context) { BookmarkStore(context) }
     val bookmarkItems by bookmarks.items.collectAsState()
@@ -154,7 +177,7 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
                 read = r.data
                 // Local history works without an account; the server copy is best-effort.
                 history.record(albumId, detail?.name.orEmpty(), detail?.authors?.firstOrNull(), detail?.addtime ?: 0L)
-                history.recordProgress(albumId, r.data.name, 1)
+                history.recordProgress(albumId, r.data.id, r.data.name, 1)
                 // This is the moment a work becomes part of the local taste profile: the reader
                 // actually opened a chapter (opening the detail page does not count).
                 stats.recordChapter(albumId, r.data.id)
@@ -193,11 +216,28 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
     val currentChapterName = chapters.firstOrNull { it.id == currentReadId }?.name ?: read?.name
 
     // Persist the reading position when the reader is left (mirrors JMComic-qt, which writes its
-    // `history` row on ReturnPage / after the chapter page list is loaded).
+    // `history` row on ReturnPage / after the chapter page list is loaded). The per-chapter store
+    // is what makes "continue reading" reopen this chapter at this page instead of chapter one.
     val latestProgress by rememberUpdatedState(progress)
     val latestChapter by rememberUpdatedState(currentChapterName)
+    val latestChapterId by rememberUpdatedState(currentReadId)
+    val latestTotal by rememberUpdatedState(read?.images?.size ?: 0)
     DisposableEffect(albumId) {
-        onDispose { history.recordProgress(albumId, latestChapter, latestProgress + 1) }
+        onDispose {
+            val page = latestProgress + 1
+            progressStore.record(albumId, latestChapterId, latestChapter, page, latestTotal)
+            history.recordProgress(albumId, latestChapterId, latestChapter, page)
+        }
+    }
+
+    // Also saved while reading: a process killed in the background never runs onDispose, and the
+    // chapter would then reopen at page one. Debounced so page turns do not write on every frame.
+    LaunchedEffect(currentReadId, read?.id) {
+        val data = read ?: return@LaunchedEffect
+        snapshotFlow { progress }.collectLatest { p ->
+            delay(PROGRESS_SAVE_MS)
+            progressStore.record(albumId, data.id, data.name, p + 1, data.images.size)
+        }
     }
 
     // Track vertical scroll progress.
@@ -298,15 +338,20 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
         }
     }
 
-    // Runs once the chapter a bookmark points at has actually landed.
-    LaunchedEffect(read?.id, pendingPage) {
-        val page = pendingPage ?: return@LaunchedEffect
+    // Runs once a chapter has landed: jump to the page a bookmark or the saved position asked
+    // for, and otherwise pin both pager and column to the top.
+    //
+    // The reset is not cosmetic. `LazyColumn` keeps its index across a data swap, so the next
+    // chapter used to open at whatever page the previous one was left on - five pages in, on a
+    // chapter that had only three.
+    LaunchedEffect(read?.id) {
         val data = read ?: return@LaunchedEffect
-        if (data.id != currentReadId) return@LaunchedEffect
-        val target = (page - 1).coerceIn(0, (data.images.size - 1).coerceAtLeast(0))
-        progress = target
-        if (isVertical) listState.scrollToItem(target) else pagerState.scrollToPage(target)
+        val page = pendingPage
+        val target = ((page ?: 1) - 1).coerceIn(0, (data.images.size - 1).coerceAtLeast(0))
         pendingPage = null
+        progress = target
+        pagerState.scrollToPage(target)
+        listState.scrollToItem(target)
     }
 
     // Volume keys: the physical buttons are the most reliable page turn on a phone, and they keep
@@ -424,11 +469,24 @@ fun ReaderScreen(navController: NavHostController, albumId: String, readId: Stri
                 }
 
                 if (showChapterList) {
-                    ChapterListDialog(
-                        chapters = chapters,
+                    // Read once while the list is open, not collected: the store writes on every
+                    // page turn, and observing it here would recompose the whole reader with it.
+                    val albumRead = progressStore.album(albumId)
+                    ChapterPickerDialog(
+                        entries = chapters.map { c ->
+                            val saved = albumRead[c.id]
+                            ChapterEntry(
+                                id = c.id,
+                                sort = c.sort,
+                                name = c.name.ifBlank { s.chapterFmt.format(c.sort) },
+                                totalPages = if (c.totalPage > 0) c.totalPage else saved?.total ?: 0,
+                                readState = chapterReadState(saved, c.totalPage),
+                                page = saved?.page ?: 0,
+                            )
+                        },
                         currentId = currentReadId,
-                        onSelect = { id ->
-                            currentReadId = id
+                        onSelect = { entry ->
+                            currentReadId = entry.id
                             showChapterList = false
                         },
                         onDismiss = { showChapterList = false },
@@ -690,49 +748,6 @@ private fun ReaderAction(
             maxLines = 1,
             modifier = Modifier.padding(start = 4.dp),
         )
-    }
-}
-
-@Composable
-private fun ChapterListDialog(
-    chapters: List<com.jm.reader.data.model.SeriesItem>,
-    currentId: String,
-    onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val s = LocalAppStrings.current
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.padding(vertical = 8.dp)) {
-                Text(s.reader.chooseChapter, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(12.dp))
-                if (chapters.isEmpty()) {
-                    Text(s.reader.singleFile, modifier = Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    LazyColumn(Modifier.fillMaxWidth().size(400.dp)) {
-                        itemsIndexed(chapters, key = { i, c -> "$i-${c.id}" }) { _, c ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable { onSelect(c.id) }.padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    c.sort.toString().padStart(3, '0'),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(end = 10.dp),
-                                )
-                                Text(
-                                    if (c.name.isNotBlank()) c.name else s.chapterFmt.format(c.sort),
-                                    color = if (c.id == currentId) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (c.id == currentId) Text(s.reader.current, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                            }
-                        }
-                    }
-                }
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text(s.close) }
-            }
-        }
     }
 }
 

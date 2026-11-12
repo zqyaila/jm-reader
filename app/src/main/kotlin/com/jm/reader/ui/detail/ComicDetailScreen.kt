@@ -74,6 +74,10 @@ import androidx.core.content.ContextCompat
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.jm.reader.data.history.ChapterProgress
+import com.jm.reader.data.history.ChapterReadState
+import com.jm.reader.data.history.chapterReadState
+import com.jm.reader.data.download.DownloadManager
 import com.jm.reader.data.model.ComicDetail
 import com.jm.reader.data.model.SeriesItem
 import com.jm.reader.data.repo.AppRepository
@@ -82,6 +86,7 @@ import com.jm.reader.data.stats.Verdict
 import com.jm.reader.ui.LocalAppStrings
 import com.jm.reader.ui.LocalDownloadManager
 import com.jm.reader.ui.LocalHistoryManager
+import com.jm.reader.ui.LocalReadingProgress
 import com.jm.reader.ui.LocalRepository
 import com.jm.reader.ui.LocalSession
 import com.jm.reader.ui.LocalStats
@@ -133,6 +138,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
     val repo = LocalRepository.current
     val session = LocalSession.current
     val history = LocalHistoryManager.current
+    val progressStore = LocalReadingProgress.current
     val stats = LocalStats.current
     val statsSnapshot by stats.snapshot.collectAsState()
     val s = LocalAppStrings.current
@@ -163,6 +169,8 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
     val context = LocalContext.current
     val downloadingState by downloadManager.downloading.collectAsState()
     val downloadedAlbums by downloadManager.albums.collectAsState()
+    val chapterPages by downloadManager.chapterPages.collectAsState()
+    val readingProgress by progressStore.state.collectAsState()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -226,8 +234,36 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                 detail == null -> ErrorView(s.loadFail, onRetry = { scope.launch { load() } })
                 else -> {
                     val chapters = if (detail.series.isNotEmpty()) detail.series.sortedBy { it.sort } else emptyList()
-                    val readId = chapters.firstOrNull()?.id ?: detail.id
-                    val downloaded = downloadedAlbums.any { it.albumId == detail.id }
+                    // "继续阅读" opens the chapter the reader last touched, not chapter one: a
+                    // 400-chapter serial is unreadable if every visit restarts it.
+                    val albumRead = readingProgress[detail.id].orEmpty()
+                    val lastRead = albumRead.values
+                        .maxByOrNull { it.at }
+                        ?.takeIf { saved -> chapters.isEmpty() || chapters.any { it.id == saved.chapterId } }
+                    // Row marker: the chapter that was read last. Button: the same chapter, or the
+                    // next one when that chapter is finished - "continue" should never reopen the
+                    // last page of a chapter that is already done.
+                    val readId = lastRead?.chapterId ?: chapters.firstOrNull()?.id ?: detail.id
+                    val lastIndex = chapters.indexOfFirst { it.id == readId }
+                    val resumeChapterId = if (
+                        lastRead != null &&
+                        lastIndex >= 0 &&
+                        lastIndex < chapters.size - 1 &&
+                        chapterReadState(lastRead, chapters[lastIndex].totalPage) == ChapterReadState.READ
+                    ) {
+                        chapters[lastIndex + 1].id
+                    } else {
+                        readId
+                    }
+                    val inIndex = downloadedAlbums.any { it.albumId == detail.id }
+                    // Per-chapter counts, so the download cell can say how much of a long serial is
+                    // already on the device instead of flipping to a bare "已下载" after one chapter.
+                    val downloadedChapters = chapterPages[detail.id]?.size ?: 0
+                    val allDownloaded = downloadedChapters > 0 && downloadedChapters >= chapters.size
+                    // Albums downloaded before chapter folders have no manifest at all: their pages
+                    // still open in the offline reader, so the cell must not offer a re-download.
+                    val legacyDownload = inIndex && downloadedChapters == 0
+                    val offlineReady = allDownloaded || legacyDownload
                     val cover = if (detail.isPaid) "" else repo.comicCoverDetail(detail.id, 0L)
                     val workId = JmId.display(detail.id)
                     val clipboard = LocalClipboardManager.current
@@ -255,7 +291,11 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                             ActionStrip(
                                 detail = detail,
                                 s = s,
-                                downloaded = downloaded,
+                                downloaded = offlineReady,
+                                downloadedChapters = downloadedChapters,
+                                totalChapters = chapters.size.coerceAtLeast(1),
+                                allDownloaded = allDownloaded,
+                                resuming = lastRead != null,
                                 downloadPhase = downloadingState[detail.id]?.phase,
                                 downloadNow = downloadingState[detail.id]?.current ?: 0,
                                 downloadTotal = downloadingState[detail.id]?.total ?: 0,
@@ -263,14 +303,14 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                     if (detail.isPaid) {
                                         scope.launch { snackbar.showSnackbar(s.paidContentNotice) }
                                     } else {
-                                        if (session.isLoggedIn) scope.launch { repo.addWatch(readId) }
-                                        navController.navigate(Routes.reader(detail.id, readId))
+                                        if (session.isLoggedIn) scope.launch { repo.addWatch(resumeChapterId) }
+                                        navController.navigate(Routes.reader(detail.id, resumeChapterId))
                                     }
                                 },
                                 onDownload = {
                                     if (detail.isPaid) {
                                         scope.launch { snackbar.showSnackbar(s.paidContentNotice) }
-                                    } else if (downloaded) {
+                                    } else if (offlineReady) {
                                         navController.navigate(Routes.offlineReader(detail.id))
                                     } else {
                                         startDownload()
@@ -401,7 +441,7 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                 Box(Modifier.padding(horizontal = Gutter)) {
                                     ArchivePlate(
                                         title = s.singleFileWork,
-                                        hint = s.startReading,
+                                        hint = if (lastRead != null) s.chapterUi.continueReading else s.startReading,
                                         code = "SINGLE / FILE",
                                         onClick = {
                                             if (!detail.isPaid) navController.navigate(Routes.reader(detail.id, detail.id))
@@ -414,6 +454,10 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                 ChapterRow(
                                     chapter = chapter,
                                     currentReadId = readId,
+                                    saved = albumRead[chapter.id],
+                                    downloadedPages = chapterPages[detail.id]?.get(chapter.id) ?: 0,
+                                    downloading = downloadingState[detail.id]
+                                        ?.takeIf { it.phase == "downloading" && it.chapterId == chapter.id },
                                     s = s,
                                     onClick = {
                                         if (!detail.isPaid) {
@@ -422,6 +466,22 @@ fun ComicDetailScreen(navController: NavHostController, id: String) {
                                         } else {
                                             scope.launch { snackbar.showSnackbar(s.paidContentNotice) }
                                         }
+                                    },
+                                    onDownload = {
+                                        if (detail.isPaid) {
+                                            scope.launch { snackbar.showSnackbar(s.paidContentNotice) }
+                                        } else {
+                                            scope.launch {
+                                                if (!downloadManager.isIdle(detail.id)) {
+                                                    snackbar.showSnackbar(s.chapterUi.downloadBusy)
+                                                } else if (!downloadManager.downloadChapter(detail.id, detail.name, chapter)) {
+                                                    snackbar.showSnackbar(s.chapterUi.chapterDownloadFailed)
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onOpenOffline = {
+                                        navController.navigate(Routes.offlineReader(detail.id, chapter.id))
                                     },
                                 )
                             }
@@ -777,6 +837,10 @@ private fun ActionStrip(
     detail: ComicDetail,
     s: AppStrings,
     downloaded: Boolean,
+    downloadedChapters: Int,
+    totalChapters: Int,
+    allDownloaded: Boolean,
+    resuming: Boolean,
     downloadPhase: String?,
     downloadNow: Int,
     downloadTotal: Int,
@@ -810,7 +874,7 @@ private fun ActionStrip(
             )
             Spacer(Modifier.width(6.dp))
             Text(
-                s.startReading,
+                if (resuming) s.chapterUi.continueReading else s.startReading,
                 fontSize = 12.5.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.2.sp,
@@ -823,6 +887,8 @@ private fun ActionStrip(
         ActionCell(
             label = when {
                 downloadPhase == "downloading" -> "$downloadNow/$downloadTotal"
+                allDownloaded -> s.downloaded
+                downloadedChapters > 0 -> "$downloadedChapters/$totalChapters"
                 downloaded -> s.downloaded
                 else -> s.download
             },
@@ -1041,11 +1107,30 @@ private fun compact(n: Long): String = when {
 private fun ChapterRow(
     chapter: SeriesItem,
     currentReadId: String,
+    saved: ChapterProgress?,
+    downloadedPages: Int,
+    downloading: DownloadManager.Progress?,
     s: AppStrings,
     onClick: () -> Unit,
+    onDownload: () -> Unit,
+    onOpenOffline: () -> Unit,
 ) {
-    val isCurrent = chapter.id == currentReadId
     val hairline = MaterialTheme.colorScheme.outlineVariant
+    val isCurrent = chapter.id == currentReadId
+    val total = if (chapter.totalPage > 0) chapter.totalPage else saved?.total ?: 0
+    val state = chapterReadState(saved, chapter.totalPage)
+    val isOffline = downloadedPages > 0
+
+    // One trailing slot, three meanings: how far in you are, how far a download got, or the page
+    // count. Stacking all three was what made the row unreadable at 360 dp.
+    val trailing = when {
+        downloading != null -> "${downloading.current}/${downloading.total}"
+        state == ChapterReadState.READING -> "${saved?.page ?: 0}/$total"
+        state == ChapterReadState.READ -> s.chapterUi.read
+        total > 0 -> "${total}P"
+        else -> null
+    }
+
     Row(
         Modifier
             .fillMaxWidth()
@@ -1058,32 +1143,73 @@ private fun ChapterRow(
                     0.7.dp.toPx(),
                 )
             }
-            .padding(horizontal = Gutter, vertical = 12.dp),
+            .padding(start = Gutter, end = 8.dp, top = 6.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            chapter.sort.toString().padStart(3, '0'),
-            style = CodeTextStyle.copy(fontSize = 8.sp),
-            color = if (isCurrent) MaterialTheme.colorScheme.onSurface
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(34.dp),
-        )
-        Text(
-            if (chapter.name.isNotBlank()) chapter.name else s.chapterFmt.format(chapter.sort),
-            fontSize = 13.sp,
-            lineHeight = 18.sp,
-            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        if (chapter.totalPage > 0) {
+        Row(
+            Modifier.weight(1f).padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                "${chapter.totalPage}P",
+                chapter.sort.toString().padStart(3, '0'),
                 style = CodeTextStyle.copy(fontSize = 8.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isCurrent) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(34.dp),
             )
+            Text(
+                if (chapter.name.isNotBlank()) chapter.name else s.chapterFmt.format(chapter.sort),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (trailing != null) {
+                Text(
+                    trailing,
+                    style = CodeTextStyle.copy(fontSize = 8.sp),
+                    color = if (state == ChapterReadState.READING || downloading != null) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 8.dp),
+                )
+            }
+        }
+
+        Box(
+            Modifier
+                .size(38.dp)
+                .glassClickable(
+                    shape = RoundedCornerShape(2.dp),
+                    onClick = if (isOffline) onOpenOffline else onDownload,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            when {
+                downloading != null -> CircularProgressIndicator(
+                    Modifier.size(14.dp),
+                    strokeWidth = 1.4.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                isOffline -> Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = s.downloaded,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(15.dp),
+                )
+                else -> Icon(
+                    Icons.Filled.Download,
+                    contentDescription = s.chapterUi.downloadChapter,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(15.dp),
+                )
+            }
         }
     }
 }

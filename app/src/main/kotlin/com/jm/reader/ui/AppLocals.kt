@@ -3,6 +3,7 @@ package com.jm.reader.ui
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.jm.reader.data.download.DownloadManager
 import com.jm.reader.data.history.HistoryManager
+import com.jm.reader.data.history.ReadingProgressStore
 import com.jm.reader.data.history.SearchHistoryManager
 import com.jm.reader.data.net.HostManager
 import com.jm.reader.data.repo.AppRepository
@@ -35,6 +36,11 @@ val LocalDownloadManager = staticCompositionLocalOf<DownloadManager> {
 
 val LocalHistoryManager = staticCompositionLocalOf<HistoryManager> {
     error("LocalHistoryManager not provided")
+}
+
+/** Per-chapter reading positions: read state, resume page, "continue reading". */
+val LocalReadingProgress = staticCompositionLocalOf<ReadingProgressStore> {
+    error("LocalReadingProgress not provided")
 }
 
 val LocalSearchHistoryManager = staticCompositionLocalOf<SearchHistoryManager> {

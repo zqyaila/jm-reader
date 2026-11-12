@@ -67,6 +67,8 @@ data class AppStrings(
      * strings also keeps the paging vocabulary in one place.
      */
     val reader: ReaderStrings,
+    /** Chapter-list vocabulary: read state, per-chapter download, offline chapters. */
+    val chapterUi: ChapterStrings,
     // Search
     val clear: String,
     val hotTagsTitle: String,
@@ -346,6 +348,7 @@ val ZhCN = AppStrings(
     retry = "重试",
     chapterFmt = "第 %1\$d 话",
     reader = ReaderStringsZh,
+    chapterUi = ChapterStringsZh,
     clear = "清除",
     hotTagsTitle = "热门标签",
     noResult = "无搜索结果",
@@ -590,6 +593,7 @@ val ZhTW = AppStrings(
     retry = "重試",
     chapterFmt = "第 %1\$d 話",
     reader = ReaderStringsTw,
+    chapterUi = ChapterStringsTw,
     clear = "清除",
     hotTagsTitle = "熱門標籤",
     noResult = "無搜尋結果",
@@ -834,6 +838,7 @@ val En = AppStrings(
     retry = "Retry",
     chapterFmt = "Episode %1\$d",
     reader = ReaderStringsEn,
+    chapterUi = ChapterStringsEn,
     clear = "Clear",
     hotTagsTitle = "Hot tags",
     noResult = "No results",
@@ -1122,4 +1127,59 @@ private object ReaderStringsEn : ReaderStrings {
     override val autoScrollStop = "Stop scrolling"
     override val imageSaved = "Saved to gallery"
     override val imageSaveFailed = "Could not save - check storage permission"
+}
+
+/**
+ * Chapter-list vocabulary: read state, per-chapter download, offline chapters.
+ *
+ * A second nested table for the same reason as [ReaderStrings] - the parent constructor is close
+ * to the JVM's 255-slot limit - and because these three or four words are read together on every
+ * chapter row.
+ */
+interface ChapterStrings {
+    val continueReading: String
+    val unread: String
+    val reading: String
+    val read: String
+    val downloadChapter: String
+    val downloadBusy: String
+    val chapterDownloadFailed: String
+    val offlineChapters: String
+    val legacyFiles: String
+}
+
+private object ChapterStringsZh : ChapterStrings {
+    override val continueReading = "继续阅读"
+    override val unread = "未读"
+    override val reading = "阅读中"
+    override val read = "已读"
+    override val downloadChapter = "下载本话"
+    override val downloadBusy = "正在下载，请稍候"
+    override val chapterDownloadFailed = "本话下载失败"
+    override val offlineChapters = "离线章节"
+    override val legacyFiles = "旧版本文件"
+}
+
+private object ChapterStringsTw : ChapterStrings {
+    override val continueReading = "繼續閱讀"
+    override val unread = "未讀"
+    override val reading = "閱讀中"
+    override val read = "已讀"
+    override val downloadChapter = "下載本話"
+    override val downloadBusy = "正在下載，請稍候"
+    override val chapterDownloadFailed = "本話下載失敗"
+    override val offlineChapters = "離線章節"
+    override val legacyFiles = "舊版本檔案"
+}
+
+private object ChapterStringsEn : ChapterStrings {
+    override val continueReading = "Continue"
+    override val unread = "Unread"
+    override val reading = "Reading"
+    override val read = "Read"
+    override val downloadChapter = "Download chapter"
+    override val downloadBusy = "Downloading, please wait"
+    override val chapterDownloadFailed = "Chapter download failed"
+    override val offlineChapters = "Offline chapters"
+    override val legacyFiles = "Older files"
 }

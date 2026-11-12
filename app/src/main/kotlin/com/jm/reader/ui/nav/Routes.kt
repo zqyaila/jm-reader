@@ -34,7 +34,7 @@ object Routes {
     const val COMIC_DETAIL = "comic/{id}"
     const val READER = "reader/{id}?readId={readId}"
     const val COMIC_LIST = "comicList/{type}?title={title}&id={id}"
-    const val OFFLINE_READER = "offline/{id}"
+    const val OFFLINE_READER = "offline/{id}?chapter={chapter}"
 
     const val NOVEL_DETAIL = "novel/{id}"
     const val MOVIE_DETAIL = "movie/{id}"
@@ -62,5 +62,6 @@ object Routes {
     fun movieDetail(id: String) = "movie/$id"
     fun gameDetail(id: String) = "game/$id"
     fun blogDetail(id: String) = "blog/$id"
-    fun offlineReader(id: String) = "offline/$id"
+    fun offlineReader(id: String, chapterId: String? = null) =
+        "offline/$id" + (chapterId?.takeIf { it.isNotBlank() }?.let { "?chapter=$it" } ?: "")
 }

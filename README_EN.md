@@ -35,10 +35,13 @@ A native **Kotlin + Jetpack Compose** Android comic reader.
   (double-tap resets); long-press saves the panel to `Pictures/JMReader`; per-page bookmarks with a
   jump list; auto-scroll in vertical mode; tap the title to reopen the album
 - 🌐 **Trilingual UI** — 简体中文 / 繁體中文 / English, switchable any time
-- ⬇️ **One-tap download** — download a whole album (all chapters, all pages) as plain,
-  de-scrambled JPEGs into `Downloads/JMReader/<albumId>/` on your device:
-  visible in the Downloads folder, transferable via USB, readable by any gallery app,
-  and playable in the built-in **offline reader** (no network needed)
+- ⬇️ **Chapter downloads** — download a single chapter (the arrow on its row) or the whole
+  album as plain, de-scrambled JPEGs in `Downloads/JMReader/<albumId>/<chapterId>/`:
+  visible in the Downloads folder, transferable via USB, readable by any gallery app, and
+  playable in the built-in **offline reader** (no network needed), which lists chapters,
+  steps previous/next and remembers the page exactly like the online reader. One finished
+  chapter is enough to open the album offline; an interrupted chapter is discarded, finished
+  ones are kept
 - 🕘 **Browsing history** — every album you open is remembered on the device (no account
   needed, works offline), with per-item delete and clear-all
 - 🛡️ **Crash report on next launch** — if the app crashes, the stack trace is saved and shown
@@ -195,7 +198,7 @@ app/src/main/kotlin/com/jm/reader/
 │  ├─ session/    SessionManager (jwt / memberInfo / host cache / language)
 │  ├─ model/      JSON helpers + domain models
 │  ├─ repo/       AppRepository (typed endpoint methods, no ad/coin methods)
-│  └─ download/   DownloadManager (album download → Downloads/JMReader, offline index)
+│  └─ download/   DownloadManager (per-chapter download → Downloads/JMReader/<album>/<chapter>)
 ├─ ui/
 │  ├─ strings/    AppStrings (zh-CN / zh-TW / en), UiLanguage, LanguageManager
 │  ├─ theme/      Color / Theme / Glass, GlassSpec (spec sizes / radii / springs +
